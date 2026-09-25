@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://instantmechanic.online/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://instantmechanic.online/#services</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://instantmechanic.online/#diagnosis</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://instantmechanic.online/#membership</loc><changefreq>monthly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://instantmechanic.online/#coverage</loc><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://instantmechanic.online/privacy</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+  <url><loc>https://instantmechanic.online/terms</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>
+</urlset>

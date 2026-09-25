@@ -1,0 +1,10 @@
+Django==5.1.15
+djangorestframework==3.17.1
+django-cors-headers==4.9.0
+groq==1.7.0
+Pillow==12.3.0
+whitenoise==6.12.0
+gunicorn==26.1.0
+pytest==9.1.1
+pytest-django==4.14.0
+pytest-cov==7.1.0
