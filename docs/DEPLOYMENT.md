@@ -3,6 +3,7 @@
 ## Architecture
 - **Frontend:** AWS S3 (static hosting) + CloudFront (CDN + HTTPS)
 - **Backend:** AWS EC2 t2.micro (Ubuntu) + Docker Compose + Nginx
+- **Backend stack:** FastAPI + Uvicorn, async SQLAlchemy + aiosqlite, tables created on startup
 
 ---
 
@@ -26,15 +27,12 @@ cd app
 sudo mkdir -p /data/media && sudo chown -R ubuntu:ubuntu /data
 
 cat > .env << 'EOF'
-DJANGO_SECRET_KEY=<generate: python3 -c "import secrets; print(secrets.token_urlsafe(50))">
-DJANGO_DEBUG=False
-DJANGO_ALLOWED_HOSTS=<ec2-ip>
-CORS_ALLOWED_ORIGINS=https://<cloudfront-url>
-SQLITE_PATH=/data/db.sqlite3
+DEBUG=False
+DATABASE_URL=sqlite+aiosqlite:////data/db.sqlite3
 MEDIA_ROOT=/data/media
+CORS_ORIGINS=https://<cloudfront-url>
 GROQ_API_KEY=<your-groq-key>
-GROQ_MODEL=qwen/qwen3.8-27b
-ENFORCE_HTTPS=False
+GROQ_MODEL=llama-3.3-70b-versatile
 EOF
 ```
 
@@ -75,7 +73,7 @@ aws s3 sync dist/ s3://<bucket-name>/ --delete
 - Origin: S3 website endpoint (not bucket URL)
 - Redirect HTTP → HTTPS
 - Custom error pages: 403/404 → /index.html (HTTP 200) for React routing
-- Note CloudFront URL → update `CORS_ALLOWED_ORIGINS` in EC2 .env → restart backend
+- Note CloudFront URL → update `CORS_ORIGINS` in EC2 `.env` → restart backend
 
 ---
 

@@ -8,8 +8,8 @@ services:
     env_file:
       - .env
     environment:
-      DJANGO_DEBUG: "False"
-      SQLITE_PATH: /data/db.sqlite3
+      DEBUG: "False"
+      DATABASE_URL: sqlite+aiosqlite:////data/db.sqlite3
       MEDIA_ROOT: /data/media
     volumes:
       - sqlite-data:/data

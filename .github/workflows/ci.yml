@@ -14,12 +14,10 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r backend/requirements.txt
-      - run: python backend/manage.py check
-        env:
-          DJANGO_DEBUG: "True"
       - run: python -m pytest -q
         env:
-          DJANGO_DEBUG: "True"
+          DEBUG: "True"
+          GROQ_API_KEY: ""
       - run: docker build -f Dockerfile.backend -t instant-mechanic-backend:ci .
   frontend:
     runs-on: ubuntu-latest

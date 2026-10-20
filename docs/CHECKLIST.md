@@ -31,7 +31,7 @@ Pre-launch:
 9. ✅ `sitemap.xml` + `robots.txt` in `public/`.
 10. ✅ Alt text on images (logo, previews, icons aria-hidden).
 11. ✅ Images compressed (SVG, no heavy assets).
-12. ✅ Perf — `npm run build` 260KB JS (78KB gzip); no third-party scripts.
+12. ✅ Perf — `npm run build` 262KB JS (79KB gzip); no third-party scripts.
 13. ✅ Contrast — amber-on-black / white-on-dark; focus rings.
 14. ✅ Mobile friendly. 15. ✅ 404. 16. ✅ Broken links fixed.
 17. ✅ Form validation — booking + chat + upload validated client + server.

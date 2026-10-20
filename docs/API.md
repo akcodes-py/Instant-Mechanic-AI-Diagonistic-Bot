@@ -1,6 +1,6 @@
 # API documentation
 
-Base URL: `VITE_API_URL` (dev `http://127.0.0.1:8000`). All JSON unless noted.
+Base URL: `VITE_API_URL` (dev `http://127.0.0.1:8000`). Backend: FastAPI + Uvicorn. All paths end with `/`. All JSON unless noted.
 
 ## POST /api/chat/
 ```json
@@ -21,7 +21,7 @@ Fields: `session_id`, `file` (jpg/jpeg/png/webp/gif, mp3/wav/ogg/m4a/webm, mp4/w
 ```json
 { "session_id": "uuid" }
 ```
-- 201 (persisted): `{ id, session, summary, possible_causes[], supporting_symptoms[], recommended_service, next_steps[], urgency: low|medium|high|critical, drive_guidance, safety_warning, inspection_recommended, ai_used, disclaimer, created_at }`
+- 201 (persisted): `{ id, session, summary, possible_causes[], supporting_symptoms[], recommended_service, next_steps[], urgency: low|medium|high|critical, drive_guidance, safety_warning, inspection_recommended, ai_generated, ai_used, disclaimer, created_at }`
 - 400: bad session / no messages. 422: only greetings so far. 503/504: provider rate-limit/timeout.
 - Rule-based first (battery, overheating, tyre, brakes, fuel, keys, noise); Groq only for nuanced cases; unsafe symptoms force `urgency: critical` + do-not-drive guidance.
 
