@@ -9,3 +9,9 @@ staticfiles/
 node_modules/
 dist/
 .git/
+backend/models/
+*.pt
+*.pth
+*.onnx
+*.safetensors
+calibration.json

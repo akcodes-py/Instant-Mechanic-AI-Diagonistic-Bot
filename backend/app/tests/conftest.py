@@ -15,6 +15,9 @@ os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{TEST_DB.as_posix()}"
 os.environ["MEDIA_ROOT"] = str(TEST_ROOT / "media")
 os.environ["GROQ_API_KEY"] = ""
 os.environ["CHAT_RATELIMIT_PER_MIN"] = "1000"
+os.environ["ENABLE_ML_INFERENCE"] = "False"
+os.environ["VISION_MODEL_PATH"] = ""
+os.environ["NLP_MODEL_PATH"] = ""
 
 from app import models  # noqa: E402,F401  (register tables)
 from app.database import Base, SessionLocal, engine  # noqa: E402

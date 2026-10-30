@@ -1,17 +1,27 @@
 """POST /api/diagnosis/ — rules first, Groq only when needed, safe fallback."""
 import logging
+from pathlib import Path
 
 from fastapi import APIRouter, Depends
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.constants import SERVICE_TYPES, URGENCY_LEVELS
 from app.database import get_db
 from app.models import ChatMessage, Diagnosis
 from app.routes.common import error_response
 from app.schemas import DiagnosisRequest, diagnosis_out
 from app.services import ai_service
+from app.services.calibration import (
+    ConformalPredictor,
+    TemperatureScaler,
+    load_calibration_params,
+    route_prediction,
+)
+from app.services.nlp_service import classify_symptoms, map_fault_to_service
+from app.services.nlp_service import is_available as nlp_available
 from app.services.session_store import (
     get_session,
     history_text,
@@ -38,6 +48,92 @@ def _substantive(text: str) -> bool:
     if is_greeting(value) or SHORT_GENERIC.match(value):
         return False
     return looks_car_related(value)
+
+
+def _ml_diagnosis(ml_result: dict, history: str) -> dict | None:
+    """Turn an optional NLP classification into a conservative diagnosis dict."""
+    top_label = str(ml_result.get("top_label") or "").strip()
+    if not top_label:
+        return None
+    predictions = ml_result.get("predictions") or []
+    labels = [
+        str(item.get("label", "")).replace("_", " ").strip()
+        for item in predictions
+        if str(item.get("label", "")).strip()
+    ]
+    urgency = (
+        "high" if top_label in ("engine_overheating", "brake_system") else "medium"
+    )
+    readable = top_label.replace("_", " ")
+    return {
+        "summary": (
+            f"ML-assisted symptom match: {readable}. An in-person inspection is "
+            "required to confirm."
+        ),
+        "possible_causes": labels or [readable],
+        "supporting_symptoms": [history[:300]],
+        "recommended_service": map_fault_to_service(top_label),
+        "next_steps": [
+            "Note when the symptom occurs (start, idle, driving, braking)",
+            "Check dashboard warning lights and fluid levels if safe",
+            "Book a mechanic inspection or call +91 9266961110 for roadside help",
+        ],
+        "urgency": urgency,
+        "drive_guidance": (
+            "If any red warning light, smoke, or unusual handling appears, stop "
+            "safely and do not continue driving."
+        ),
+        "safety_warning": (
+            "ML-assisted preliminary assessment, not a confirmed mechanical "
+            "inspection."
+        ),
+        "inspection_recommended": True,
+    }
+
+
+def _ml_diagnosis_from_calibration(ml_result: dict, history: str) -> dict | None:
+    """Use conformal prediction when calibration exists; otherwise use 0.7 gate."""
+    payload = _ml_diagnosis(ml_result, history)
+    if payload is None:
+        return None
+
+    predictions = ml_result.get("predictions") or []
+    labels = [
+        str(item.get("label", "")).strip()
+        for item in predictions
+        if str(item.get("label", "")).strip()
+    ]
+    if not labels:
+        return None
+
+    model_path = (settings.NLP_MODEL_PATH or "").strip()
+    calibration_path = None
+    if model_path:
+        model_location = Path(model_path)
+        calibration_path = (
+            model_location / "calibration.json"
+            if model_location.is_dir()
+            else model_location.parent / "calibration.json"
+        )
+    params = load_calibration_params(calibration_path) if calibration_path else None
+    if params is None:
+        # No calibration file: only trust a high-confidence ML match.
+        if float(ml_result.get("confidence", 0.0)) > 0.7:
+            return payload
+        return None
+
+    temperature, q_hat, alpha = params
+    scores = [
+        1.0 - float(item.get("score", 0.0))
+        for item in predictions
+        if str(item.get("label", "")).strip()
+    ]
+    scaled_scores = TemperatureScaler(temperature).scale(scores)
+    predictor = ConformalPredictor(alpha=alpha)
+    predictor.q_hat = q_hat
+    prediction_set = predictor.predict_set(scaled_scores, labels)
+    routed, _ = route_prediction(prediction_set, payload, history)
+    return routed
 
 
 @router.post("/diagnosis/")
@@ -89,8 +185,16 @@ async def diagnosis(
     if rule:
         diagnosis_payload = dict(rule["diagnosis"])
         diagnosis_payload["supporting_symptoms"] = [history[:300]]
-    elif ai_service.is_configured():
-        # 2) Groq for nuanced cases only.
+    elif settings.ENABLE_ML_INFERENCE and nlp_available():
+        # 2) Optional ML classifier, only when enabled and a model exists.
+        try:
+            ml_result = await run_in_threadpool(classify_symptoms, history[:512])
+            diagnosis_payload = _ml_diagnosis_from_calibration(ml_result, history)
+        except Exception:
+            logger.warning("ML diagnosis failed; using fallback", exc_info=False)
+
+    # 3) Groq for nuanced cases only, and as the safe fallback when ML is unsure.
+    if diagnosis_payload is None and ai_service.is_configured():
         try:
             diagnosis_payload = await run_in_threadpool(
                 ai_service.groq_structured_diagnosis,

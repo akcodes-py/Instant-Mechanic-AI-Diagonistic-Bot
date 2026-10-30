@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     MAX_VIDEO_MB: float = 50.0
     CHAT_RATELIMIT_PER_MIN: int = 30
 
+    # ML model paths (empty = unavailable, deterministic fallback)
+    VISION_MODEL_PATH: str = ""
+    VISION_CONF: float = 0.25
+    VISION_IMGSZ: int = 960
+    NLP_MODEL_PATH: str = ""
+    ENABLE_ML_INFERENCE: bool = False
+
     @property
     def cors_origins(self) -> list[str]:
         raw = self.CORS_ORIGINS or self.CORS_ALLOWED_ORIGINS

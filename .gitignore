@@ -27,6 +27,20 @@ __pycache__/
 coverage.xml
 htmlcov/
 
+# ML model / generated training artifacts (never commit weights)
+backend/models/
+*.pt
+*.pth
+*.onnx
+*.safetensors
+calibration.json
+augmented_nhtsa.csv
+symptoms.csv
+test.csv
+gen_data.py
+pln.md
+
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

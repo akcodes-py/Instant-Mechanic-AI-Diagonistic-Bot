@@ -33,8 +33,16 @@ MEDIA_ROOT=/data/media
 CORS_ORIGINS=https://<cloudfront-url>
 GROQ_API_KEY=<your-groq-key>
 GROQ_MODEL=llama-3.3-70b-versatile
+# Optional ML: keep off unless you copied model files to /data/models.
+ENABLE_ML_INFERENCE=False
+VISION_MODEL_PATH=
+VISION_CONF=0.25
+VISION_IMGSZ=960
+NLP_MODEL_PATH=
 EOF
 ```
+
+If enabling ML, copy the model files under `/data/models/` (mounted/persistent), set `VISION_MODEL_PATH` to the YOLO `.pt` file and `NLP_MODEL_PATH` to the local classifier directory; place `calibration.json` next to the classifier. The default `t2.micro` may not have enough RAM for PyTorch/Ultralytics; size the instance accordingly. With ML off, the image is still large but startup stays deterministic.
 
 ### 4. Start Backend
 ```bash

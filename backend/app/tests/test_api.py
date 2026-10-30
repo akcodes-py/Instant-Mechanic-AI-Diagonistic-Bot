@@ -461,3 +461,340 @@ async def test_honeypot_rejected(client):
         client, "/api/chat/", {"message": "battery issue", "website": "bot"}
     )
     assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_upload_image_without_ml(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "ENABLE_ML_INFERENCE", False)
+    monkeypatch.setattr(settings, "MEDIA_ROOT", tmp_path)
+    response = await post(client, "/api/chat/", {"message": "warning light on dashboard"})
+    session_id = response.json()["session_id"]
+    upload = await client.post(
+        "/api/upload/",
+        data={"session_id": session_id},
+        files={"file": ("warning.png", _png_bytes(), "image/png")},
+    )
+    assert upload.status_code == 201
+    assert upload.json()["analyzed"] is False
+    assert upload.json()["vision"] is None
+
+
+@pytest.mark.asyncio
+async def test_upload_image_with_ml_vision(client, db_session, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "ENABLE_ML_INFERENCE", True)
+    monkeypatch.setattr(settings, "MEDIA_ROOT", tmp_path)
+    monkeypatch.setattr(
+        "app.routes.upload.preprocess_for_inference", lambda path: path
+    )
+    monkeypatch.setattr(
+        "app.routes.upload.detect_warning_lights",
+        lambda path: [
+            {
+                "label": "Check Engine",
+                "confidence": 0.87,
+                "box": [1.0, 2.0, 3.0, 4.0],
+                "reliable": True,
+            },
+            {
+                "label": "Electronic Stability Problem -ESP-",
+                "confidence": 0.45,
+                "box": [5.0, 6.0, 7.0, 8.0],
+                "reliable": False,
+            },
+        ],
+    )
+    response = await post(client, "/api/chat/", {"message": "warning light on dashboard"})
+    session_id = response.json()["session_id"]
+    upload = await client.post(
+        "/api/upload/",
+        data={"session_id": session_id},
+        files={"file": ("warning.png", _png_bytes(), "image/png")},
+    )
+    assert upload.status_code == 201
+    body = upload.json()
+    assert body["analyzed"] is True
+    assert body["detections"][0]["label"] == "Check Engine"
+    assert body["detections"][0]["confidence"] == 0.87
+    assert body["detections"][0]["box"] == [1.0, 2.0, 3.0, 4.0]
+    assert body["reliable_labels"] == ["Check Engine"]
+    assert body["vision"]["count"] == 2
+    assert body["vision"]["reliable_labels"] == ["Check Engine"]
+    assert "Check Engine" in body["note"]
+    assert "Electronic Stability" not in body["note"]
+
+    messages = (
+        await db_session.scalars(
+            select(ChatMessage)
+            .where(ChatMessage.session_id == session_id)
+            .order_by(ChatMessage.created_at)
+        )
+    ).all()
+    llm_context = "\n".join(message.content for message in messages)
+    assert "Check Engine" in llm_context
+    assert "Electronic Stability" not in llm_context
+
+
+@pytest.mark.asyncio
+async def test_upload_image_ml_no_reliable_detections(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "ENABLE_ML_INFERENCE", True)
+    monkeypatch.setattr(settings, "MEDIA_ROOT", tmp_path)
+    monkeypatch.setattr(
+        "app.routes.upload.preprocess_for_inference", lambda path: path
+    )
+    monkeypatch.setattr(
+        "app.routes.upload.detect_warning_lights",
+        lambda path: [
+            {
+                "label": "Check Engine",
+                "confidence": 0.44,
+                "box": [1.0, 2.0, 3.0, 4.0],
+                "reliable": False,
+            }
+        ],
+    )
+    response = await post(client, "/api/chat/", {"message": "warning light on dashboard"})
+    session_id = response.json()["session_id"]
+    upload = await client.post(
+        "/api/upload/",
+        data={"session_id": session_id},
+        files={"file": ("warning.png", _png_bytes(), "image/png")},
+    )
+    assert upload.status_code == 201
+    body = upload.json()
+    assert body["analyzed"] is True
+    assert body["reliable_labels"] == []
+    assert body["vision"]["count"] == 1
+    assert "clearer" in body["note"].lower()
+    assert "text" in body["note"].lower()
+    assert "Automated check detected" not in body["note"]
+
+
+@pytest.mark.asyncio
+async def test_upload_image_ml_empty_detections(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "ENABLE_ML_INFERENCE", True)
+    monkeypatch.setattr(settings, "MEDIA_ROOT", tmp_path)
+    monkeypatch.setattr(
+        "app.routes.upload.preprocess_for_inference", lambda path: path
+    )
+    monkeypatch.setattr(
+        "app.routes.upload.detect_warning_lights", lambda path: []
+    )
+    response = await post(client, "/api/chat/", {"message": "warning light on dashboard"})
+    session_id = response.json()["session_id"]
+    upload = await client.post(
+        "/api/upload/",
+        data={"session_id": session_id},
+        files={"file": ("warning.png", _png_bytes(), "image/png")},
+    )
+    assert upload.status_code == 201
+    body = upload.json()
+    assert body["analyzed"] is False
+    assert body["detections"] == []
+    assert body["vision"]["count"] == 0
+    assert "clearer" in body["note"].lower()
+
+
+@pytest.mark.asyncio
+async def test_upload_image_ml_inference_failure_keeps_upload(
+    client, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "ENABLE_ML_INFERENCE", True)
+    monkeypatch.setattr(settings, "MEDIA_ROOT", tmp_path)
+    monkeypatch.setattr(
+        "app.routes.upload.preprocess_for_inference", lambda path: path
+    )
+
+    def _boom(path):
+        raise RuntimeError("inference failed")
+
+    monkeypatch.setattr("app.routes.upload.detect_warning_lights", _boom)
+    response = await post(client, "/api/chat/", {"message": "warning light on dashboard"})
+    session_id = response.json()["session_id"]
+    upload = await client.post(
+        "/api/upload/",
+        data={"session_id": session_id},
+        files={"file": ("warning.png", _png_bytes(), "image/png")},
+    )
+    assert upload.status_code == 201
+    body = upload.json()
+    assert body["analyzed"] is False
+    assert body["detections"] == []
+    assert body["vision"] is None
+    assert "clearer" in body["note"].lower()
+
+
+@pytest.mark.asyncio
+async def test_upload_ml_rejects_non_vision_image_extension(client, monkeypatch):
+    monkeypatch.setattr(settings, "ENABLE_ML_INFERENCE", True)
+    response = await post(client, "/api/chat/", {"message": "warning light on dashboard"})
+    session_id = response.json()["session_id"]
+    upload = await client.post(
+        "/api/upload/",
+        data={"session_id": session_id},
+        files={"file": ("warning.gif", _png_bytes(), "image/gif")},
+    )
+    assert upload.status_code == 400
+    assert "JPG" in upload.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_upload_image_ml_enabled_without_model(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "ENABLE_ML_INFERENCE", True)
+    monkeypatch.setattr(settings, "VISION_MODEL_PATH", "")
+    monkeypatch.setattr(settings, "MEDIA_ROOT", tmp_path)
+    monkeypatch.setattr(
+        "app.routes.upload.preprocess_for_inference", lambda path: path
+    )
+    response = await post(client, "/api/chat/", {"message": "warning light on dashboard"})
+    session_id = response.json()["session_id"]
+    upload = await client.post(
+        "/api/upload/",
+        data={"session_id": session_id},
+        files={"file": ("warning.png", _png_bytes(), "image/png")},
+    )
+    assert upload.status_code == 201
+    body = upload.json()
+    assert body["analyzed"] is False
+    assert body["detections"] == []
+    assert body["vision"]["count"] == 0
+    assert "clearer" in body["note"].lower()
+
+
+@pytest.mark.asyncio
+async def test_ml_upload_over_10mb_rejected(client, monkeypatch):
+    monkeypatch.setattr(settings, "ENABLE_ML_INFERENCE", True)
+    response = await post(client, "/api/chat/", {"message": "warning light on dashboard"})
+    session_id = response.json()["session_id"]
+    big = b"\xff\xd8\xff" + b"0" * (11 * 1024 * 1024)
+    upload = await client.post(
+        "/api/upload/",
+        data={"session_id": session_id},
+        files={"file": ("dashboard.jpg", big, "image/jpeg")},
+    )
+    assert upload.status_code == 400
+    assert "10 MB" in upload.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_gif_upload_rejected_without_ml(client):
+    response = await post(client, "/api/chat/", {"message": "warning light on dashboard"})
+    session_id = response.json()["session_id"]
+    upload = await client.post(
+        "/api/upload/",
+        data={"session_id": session_id},
+        files={"file": ("warning.gif", _png_bytes(), "image/gif")},
+    )
+    assert upload.status_code == 400
+    assert "Unsupported file type" in upload.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_upload_airbag_detection_stays_rule_based(
+    client, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "ENABLE_ML_INFERENCE", True)
+    monkeypatch.setattr(settings, "MEDIA_ROOT", tmp_path)
+    monkeypatch.setattr(
+        "app.routes.upload.preprocess_for_inference", lambda path: path
+    )
+    monkeypatch.setattr(
+        "app.routes.upload.detect_warning_lights",
+        lambda path: [
+            {
+                "label": "SRS-Airbag",
+                "confidence": 0.82,
+                "box": [1.0, 2.0, 3.0, 4.0],
+                "reliable": True,
+            }
+        ],
+    )
+    response = await post(client, "/api/chat/", {"message": "warning light on dashboard"})
+    session_id = response.json()["session_id"]
+    upload = await client.post(
+        "/api/upload/",
+        data={"session_id": session_id},
+        files={"file": ("warning.png", _png_bytes(), "image/png")},
+    )
+    assert upload.status_code == 201
+    diagnosis = await post(client, "/api/diagnosis/", {"session_id": session_id})
+    assert diagnosis.status_code == 201
+    body = diagnosis.json()
+    assert body["ai_used"] is False
+    assert "airbag" in body["summary"].lower()
+    assert body["recommended_service"] == "general_repair"
+
+
+@pytest.mark.asyncio
+async def test_diagnosis_without_ml_uses_rules(client, monkeypatch):
+    monkeypatch.setattr(settings, "ENABLE_ML_INFERENCE", False)
+    response = await post(
+        client, "/api/chat/", {"message": "wont start rapid clicking, battery dead"}
+    )
+    session_id = response.json()["session_id"]
+    diagnosis = await post(client, "/api/diagnosis/", {"session_id": session_id})
+    assert diagnosis.status_code == 201
+    assert diagnosis.json()["recommended_service"] == "battery_jumpstart"
+    assert diagnosis.json()["ai_used"] is False
+
+
+@pytest.mark.asyncio
+async def test_diagnosis_ml_branch_when_enabled(client, monkeypatch):
+    monkeypatch.setattr(settings, "ENABLE_ML_INFERENCE", True)
+    monkeypatch.setattr("app.routes.diagnosis.nlp_available", lambda: True)
+    monkeypatch.setattr(
+        "app.routes.diagnosis.classify_symptoms",
+        lambda text: {
+            "predictions": [
+                {"label": "battery_electrical", "score": 0.91},
+                {"label": "ignition_starter", "score": 0.05},
+            ],
+            "top_label": "battery_electrical",
+            "confidence": 0.91,
+            "analyzed": True,
+        },
+    )
+    response = await post(
+        client,
+        "/api/chat/",
+        {"message": "dashboard warning light flickers while idling"},
+    )
+    session_id = response.json()["session_id"]
+    diagnosis = await post(client, "/api/diagnosis/", {"session_id": session_id})
+    assert diagnosis.status_code == 201
+    assert diagnosis.json()["recommended_service"] == "battery_jumpstart"
+    assert diagnosis.json()["ai_used"] is False
+    assert "ML-assisted" in diagnosis.json()["summary"]
+
+
+@pytest.mark.asyncio
+async def test_diagnosis_ml_calibration_routing(client, monkeypatch, tmp_path):
+    model_path = tmp_path / "model.bin"
+    model_path.write_bytes(b"test")
+    (tmp_path / "calibration.json").write_text(
+        json.dumps({"temperature": 1.0, "q_hat": 0.5, "alpha": 0.05})
+    )
+    monkeypatch.setattr(settings, "ENABLE_ML_INFERENCE", True)
+    monkeypatch.setattr(settings, "NLP_MODEL_PATH", str(model_path))
+    monkeypatch.setattr("app.routes.diagnosis.nlp_available", lambda: True)
+    monkeypatch.setattr(
+        "app.routes.diagnosis.classify_symptoms",
+        lambda text: {
+            "predictions": [
+                {"label": "battery_electrical", "score": 0.95},
+                {"label": "ignition_starter", "score": 0.40},
+            ],
+            "top_label": "battery_electrical",
+            "confidence": 0.95,
+            "analyzed": True,
+        },
+    )
+    response = await post(
+        client,
+        "/api/chat/",
+        {"message": "dashboard warning light flickers while idling"},
+    )
+    session_id = response.json()["session_id"]
+    diagnosis = await post(client, "/api/diagnosis/", {"session_id": session_id})
+    assert diagnosis.status_code == 201
+    assert diagnosis.json()["recommended_service"] == "battery_jumpstart"
+    assert diagnosis.json()["ai_used"] is False

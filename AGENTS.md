@@ -8,14 +8,15 @@
   - `main.py` — app, CORS, lifespan (tables + media dir), routers.
   - `routes/` — `health.py`, `chat.py`, `upload.py`, `diagnosis.py`, `booking.py`, `history.py`.
   - `models.py`, `schemas.py`, `database.py`, `config.py`, `constants.py`.
-  - `services/` — `triage.py`, `ai_service.py`, `media.py`, `session_store.py`.
-  - `tests/` — 37 pytest tests (31 API + 6 AI service).
+  - `services/` — `triage.py`, `ai_service.py`, `media.py`, `session_store.py`, plus optional ML: `vision_service.py`, `nlp_service.py`, `preprocessing.py`, `calibration.py`, `onnx_service.py`.
+  - `scripts/` — standalone `augment_nhtsa.py` (Groq Hinglish rewrite) and `create_calibration.py` (temperature scaling + conformal calibration).
+  - `tests/` — 56 pytest tests (36 API + 6 AI service + 14 ML service).
 - **Docs:** `README.md` (entry point), `docs/API.md` (endpoint contract), `docs/ARCHITECTURE.md` (layers), `docs/DEPLOYMENT.md` (AWS path), `docs/CHECKLIST.md` (manual website audit). `Full_Stack_Developer_Intern_Task (3).pdf` is the assignment brief — keep it.
 - **Infra:** `Dockerfile.backend`, `Dockerfile.frontend`, `docker-compose.yml`, `.github/workflows/ci.yml`. `ec2-nginx.conf` is an untracked nginx sample for EC2.
-- **Git:** `main` tracks `origin` (GitHub). Last commit 2026-09-26 (`5b16ed8`); the FastAPI migration diff is uncommitted at the time of writing. `fastapi_migration_plan.md`, `ec2-nginx.conf`, and this file are untracked.
-- **The DRF → FastAPI migration is complete.** The old `backend_django/` reference tree was removed after the new suite passed; it remains in git history. `fastapi_migration_plan.md` is now a historical plan — do not re-run it or reintroduce Django/DRF.
+- **Git:** `main` tracks `origin` (GitHub). The FastAPI migration commit is `9740073`; the optional ML build is uncommitted at the time of writing. `fastapi_migration_plan.md`, `pln.md`, `ec2-nginx.conf`, and this file are untracked.
+- **The DRF → FastAPI migration is complete.** The old `backend_django/` reference tree was removed after the new suite passed; it remains in git history. `fastapi_migration_plan.md` is historical — do not re-run it or reintroduce Django/DRF. `pln.md` is the implemented optional-ML plan; treat it as historical once this change lands.
 - **No live deployment is verified.** README says "Not deployed yet"; `docs/DEPLOYMENT.md` is a guide. Never claim a URL, uptime, or smoke result that was not actually tested.
-- **Measured state (2026-10-20, Python 3.14.4):** `37 passed` in ~12–19 s, total coverage **89%**; `manage.py` is gone. Frontend `npm run typecheck` and `npm run build` pass (~262 kB JS / 79 kB gzip); `npm run lint` exits 0 with two `react(set-state-in-effect)` warnings at `src/components/Site.tsx:323` and `src/components/Chatbot.tsx:45`.
+- **Measured state (2026-10-21, Python 3.14.4):** `71 passed, 1 skipped` in ~12 s, total coverage **81%** (the skip is the optional dashboard-weights integration test; no weights are present). Frontend `npm run typecheck` and `npm run build` pass (~262 kB JS / 79 kB gzip); `npm run lint` exits 0 with two `react(set-state-in-effect)` warnings at `src/components/Site.tsx:323` and `src/components/Chatbot.tsx:45`.
 - **Hygiene:** root `.coverage`, `backend/.coverage`, and old `backend/**/__pycache__` files were tracked historically. This migration removes them, and `.gitignore` now ignores Python/test artifacts. Do not re-add generated files.
 
 ## Source-of-truth rules
@@ -33,16 +34,16 @@
 
 - Reject honeypot payloads (`website` non-empty) with 400; cap `message` at 2000 chars; rate-limit at `CHAT_RATELIMIT_PER_MIN` (default 30/min) per session or client host; the limiter is in-memory and per process.
 - Create or reuse `ChatSession`; copy vehicle fields; best-effort deterministic extraction of make/year/fuel; persist the user message before responding.
-- Deterministic first (`app/services/triage.py`): greeting, empty/short generic, non-car rejection, and 7 symptom rules (battery/no-start, overheating, flat tyre, brakes, fuel, key lockout, engine noise). These paths never call Groq.
+- Deterministic first (`app/services/triage.py`): greeting, empty/short generic, non-car rejection, and 8 symptom rules (battery/no-start, overheating, airbag/SRS, flat tyre, brakes, fuel, key lockout, engine noise). These paths never call Groq.
 - Groq chat is only for vague-but-car-related, rule-free messages of at least 3 words when the provider is configured; a provider failure keeps the deterministic reply. Never use AI to decide relevance or safety.
 - Response keys: `session_id`, `reply`, `action` (`follow_up|greet|reject|ready`), `needs_info`, `ai_used`, optionally `diagnosis_ready` and `unsafe`. Non-car queries return 200 with `action: "reject"` (not 4xx).
 
 ### Diagnosis (`POST /api/diagnosis/`)
 
 - Requires a valid session and at least one user message (400); greetings/smalltalk only → 422.
-- Rule match → no AI. Otherwise Groq structured diagnosis when configured, else the safe generic deterministic fallback. Only `rate_limit` → 503 and `timeout` → 504; other provider failures fall back without leaking details.
-- Unsafe symptoms (smoke, fire, burning smell, fuel leak, brake failure, steering loss) force `urgency: critical` plus do-not-drive guidance and the emergency number.
-- Persist the `Diagnosis`; return 201 with the disclaimer and an honest `ai_used` flag. The response also exposes `ai_generated` (ORM column) like the old serializer did.
+- Rule match → no AI. Otherwise, when `ENABLE_ML_INFERENCE=True` and a local NLP model exists, try the classifier; use it only if the confidence gate (0.7) or conformal routing accepts it. If ML is off/unsure, Groq structured diagnosis when configured, else the safe generic deterministic fallback. Only `rate_limit` → 503 and `timeout` → 504; other provider failures fall back without leaking details.
+- Unsafe symptoms (smoke, fire, burning smell, fuel leak, brake failure, steering loss) force `urgency: critical` plus do-not-drive guidance and the emergency number. The safety override runs after rule/ML/Groq and cannot be bypassed by ML.
+- Persist the `Diagnosis`; return 201 with the disclaimer and an honest `ai_used` flag. `ai_used` is `false` for rule- and ML-derived diagnoses and only `true` for an actual Groq diagnosis. The response also exposes `ai_generated` (ORM column) like the old serializer did.
 
 ### Booking (`POST /api/booking/`, `GET /api/booking/<id>/`)
 
@@ -53,9 +54,10 @@
 
 ### Upload (`POST /api/upload/`)
 
-- Multipart `file` plus a valid `session_id`; validate extension, magic bytes/Pillow, and size (image 10 MB, audio 15 MB, video 50 MB); store under `MEDIA_ROOT/uploads/YYYY/MM/DD/` with a UUID filename; keep the original name in the DB only.
-- Images get a dimensions/received note; audio/video are stored but not transcribed. **Never claim AI understood the media.** Do not fabricate observations.
-- Return 201 with `id`, `session_id`, `kind`, `size_bytes`, `analyzed: false`, and an honest note. The API does not serve stored media and there is no admin UI.
+- Multipart `file` plus a valid `session_id`; validate extension, magic bytes/Pillow, and size (image 10 MB, audio 15 MB, video 50 MB). Images are limited to jpg/jpeg/png/webp (GIF is rejected); with `ENABLE_ML_INFERENCE=True` only those image types are accepted for warning-light analysis. Store under `MEDIA_ROOT/uploads/YYYY/MM/DD/` with a UUID filename; keep the original name in the DB only.
+- Images get a dimensions/received note plus an optional cached Ultralytics YOLO warning-light check when `ENABLE_ML_INFERENCE=True`. Class names come from the loaded model. Detections are `{label, confidence (3 decimals), box, reliable}` sorted by confidence. Reliability gates: 0.40 default; `Check Engine`, `Electronic Stability Problem -ESP-`, and `Low Engine Oil Warning Light` require 0.50. Audio/video are stored but never transcribed. **Never claim AI understood media unless a real model ran and returned detections.** Do not fabricate observations.
+- If no reliable detection exists, the note/message asks for a clearer, closer dashboard photo or a text description. Only reliable labels are added to the chat history that feeds diagnosis/LLM explanation. Safety-critical labels (brakes, overheating, airbag) must resolve through deterministic triage rules, not LLM output.
+- Return 201 with `id`, `session_id`, `kind`, `size_bytes`, `analyzed`, `note`, `message`, `detections`, `reliable_labels`, and `vision` (`null` when ML is off or inference failed; otherwise `{detections, count, labels, reliable_labels, analyzed}`). `analyzed` stays `false` when ML is off, unavailable, failed, or returned no detections. The API does not serve stored media and there is no admin UI.
 
 ### History / health
 
@@ -82,13 +84,24 @@
 - Provider calls are synchronous SDK calls run through `run_in_threadpool` from async routes. Keep them off the event loop.
 - Tests mock every provider interaction. Do not add live Groq calls to tests or CI; `pytest` must not need a key.
 
+## ML rules (optional, off by default)
+
+- `ENABLE_ML_INFERENCE=False` is the default and must keep the full chat → diagnosis → booking flow deterministic. Never make ML availability a startup requirement.
+- All optional ML imports are lazy and live in `services/vision_service.py`, `nlp_service.py`, `preprocessing.py`, `calibration.py`, `onnx_service.py`. Every model load/inference failure returns a safe empty result; never raise into a request or log model paths, weights, or raw provider errors.
+- Model files are not committed. Configure `VISION_MODEL_PATH` (Ultralytics YOLO `.pt`; classes are read from the model), `VISION_CONF` (default 0.25), `VISION_IMGSZ` (default 960), and `NLP_MODEL_PATH` (local transformer file or directory) at deploy time. `calibration.json` may sit in the classifier directory (or its parent when the path is a file) for temperature scaling + conformal routing; without it, use the 0.7 confidence gate.
+- ML never decides relevance or safety. The deterministic triage gate and unsafe-symptom override still run first/last as appropriate. `ai_used` stays honest (`false` for rule/ML diagnoses).
+- Conformal routing: a prediction set of size 1–2 may use the ML diagnosis; size >2 escalates to Groq. With no `calibration.json`, only confidence >0.7 is accepted.
+- Vision only analyzes images, and only when enabled/available. Audio/video are never transcribed or "understood". Do not fabricate detections, confidence, or findings; report only what the model returned.
+- ONNX helpers are optional acceleration, not a second source of truth. Tests must pass with no model files and no live inference; add mocks/fakes rather than downloading weights.
+- `backend/scripts/augment_nhtsa.py` and `create_calibration.py` are standalone utilities, never imported by the app. They may call Groq/models, but only manually; keep them out of CI/tests.
+
 ## Frontend rules
 
 - API base comes only from `VITE_API_URL`, default `http://127.0.0.1:8000`; never put secrets in `VITE_*` variables or source.
 - `src/api.ts` is the single API surface. Keep its interfaces aligned with `docs/API.md`. It retries network/5xx twice with backoff and surfaces server messages for 4xx.
 - `CONTACT` in `src/api.ts` is the canonical phone/WhatsApp/email/address source. Use it for new UI and replace hardcoded duplicates when touched.
 - UX contract: mobile-first, no horizontal scroll, 44px+ targets, sticky emergency call/WhatsApp bar, accessible labels, `role="status"` for success and `role="alert"` for errors, cookie banner essential-only (no trackers).
-- The chatbot must remain usable without AI (deterministic replies) and must show uploads as received-but-not-auto-analyzed.
+- The chatbot must remain usable without AI (deterministic replies) and must show uploads as received-but-not-auto-analyzed unless the API actually returned ML detections.
 - Keep the in-app legal pages available; they are drafts for owner review, not legal advice.
 
 ## Environment
@@ -107,6 +120,10 @@
 | `GROQ_TIMEOUT_S` | `20` | |
 | `MAX_IMAGE_MB` / `MAX_AUDIO_MB` / `MAX_VIDEO_MB` | `10` / `15` / `50` | upload limits |
 | `CHAT_RATELIMIT_PER_MIN` | `30` | in-memory limiter |
+| `ENABLE_ML_INFERENCE` | `False` | optional vision/NLP inference; off keeps deterministic mode |
+| `VISION_MODEL_PATH` | empty | Ultralytics YOLO warning-light model; empty/unreadable = unavailable |
+| `VISION_CONF` / `VISION_IMGSZ` | `0.25` / `960` | YOLO confidence and input size (`iou=0.5` fixed) |
+| `NLP_MODEL_PATH` | empty | local transformer classifier; `calibration.json` may sit in its parent |
 | `DJANGO_SECRET_KEY`, `DJANGO_ALLOWED_HOSTS`, `SQLITE_PATH`, `ENFORCE_HTTPS` | ignored | old Django vars; migrate local `.env` to `DATABASE_URL`/`CORS_ORIGINS` |
 
 - `.env` is gitignored; `.env.example` is the tracked template. Never commit a real key, `db.sqlite3`, `media/`, `dist/`, `.coverage`, or `__pycache__`.
@@ -117,14 +134,15 @@
 
 Working directory: repo root (`instant-mechanic/`). No project `.venv` is present; `python` currently resolves to 3.14.4 with the backend deps installed. CI and Docker use Python 3.12; the frontend CI uses Node 20.
 
-- Install backend deps: `python -m pip install -r backend/requirements.txt`
-- Tests: `python -m pytest -q` (from root; `pytest.ini` sets `pythonpath=backend`, async mode, coverage)
+- Install backend deps: `python -m pip install --extra-index-url https://download.pytorch.org/whl/cpu -r backend/requirements.txt` (ML wheels target Python 3.12; the local 3.14 interpreter already has enough installed for tests)
+- Tests: `python -m pytest -q` (from root; `pytest.ini` sets `pythonpath=backend`, async mode, coverage); no model files or API keys required
 - Coverage detail: `python -m pytest --cov=app --cov-report=term-missing`
 - Run API: `cd backend` then `python -m uvicorn app.main:app --reload --port 8000` → `http://127.0.0.1:8000/api/health/`
 - There is no `migrate` step; tables are created on startup.
 - Frontend install/dev: `npm install`, `npm run dev` → `http://localhost:5173`
 - Frontend gates: `npm run lint`, `npm run typecheck`, `npm run build`
-- Docker: `docker compose up --build` (requires root `.env`); direct image: `docker build -f Dockerfile.backend -t instant-mechanic-backend .`
+- Docker: `docker compose up --build` (requires root `.env`); direct image: `docker build -f Dockerfile.backend -t instant-mechanic-backend .` (CPU PyTorch wheels; image is large)
+- ML utilities (manual only): `python backend/scripts/augment_nhtsa.py <csv> -o <csv>`, `python backend/scripts/create_calibration.py <csv> -o calibration.json`
 - Health check: `Invoke-RestMethod http://127.0.0.1:8000/api/health/`
 - Deployment: follow `docs/DEPLOYMENT.md`; the nginx sample is `ec2-nginx.conf`.
 
@@ -134,13 +152,14 @@ PowerShell note: prefer script files over inline `python -c` when the snippet co
 
 Fast loop for every change:
 
-1. `python -m pytest -q` — must stay **37 passed** (31 API + 6 AI-service tests).
+1. `python -m pytest -q` — must stay **71 passed, 1 skipped** (44 API + 6 AI-service + 21 ML-service; the skip is the optional weights integration test when `backend/models/dashboard_lights.pt` is absent).
 2. Startup smoke: `cd backend`, run Uvicorn, hit `/api/health/`, then chat → diagnosis → booking → history.
 3. `npm run typecheck` and `npm run build` — clean.
 4. `npm run lint` — currently 0 errors / 2 warnings; do not add warnings.
-5. Manual smoke for the changed path: valid and invalid upload; 400/404/422/429/503/504; confirm errors do not leak secrets.
+5. Manual smoke for the changed path: valid and invalid upload; 400/404/422/429/503/504; confirm errors do not leak secrets. For ML changes, verify `ENABLE_ML_INFERENCE=False` still behaves identically and that missing/bad model paths fall back.
+6. Script smoke: `python backend/scripts/augment_nhtsa.py --help`, `python backend/scripts/create_calibration.py --help`.
 
-Current measured baseline (2026-10-20): 37 passed, 89% total coverage (`models`/`health`/`history` 100%, `schemas` 95%, `session_store` 90%, `diagnosis` 89%, `triage` 89%, `database` 88%, `upload` 87%, `booking` 84%, `chat` 83%, `main` 82%, `ai_service` 65%, `media` 63%), ~12–19 s. A TestClient smoke returned health 200, chat `greet`, booking 201; a Docker build and container smoke on the production-style `/data` paths also passed. Local Python 3.14 vs CI 3.12 is expected.
+Current measured baseline (2026-10-21): 71 passed, 1 skipped, 81% total coverage (`models`/`health`/`history`/`config` 100%, `schemas` 95%, `session_store` 90%, `triage` 89%, `diagnosis`/`database` 88%, `chat` 83%, `booking` 84%, `vision_service` 80%, `upload` 79%, `calibration` 43%, `nlp_service` 33%, `media` 64%, `onnx_service` 24%, `preprocessing` 50%), ~13 s. The skip is the optional `backend/models/dashboard_lights.pt` integration test because no weights are present. A TestClient smoke returned health 200, chat `greet`, booking 201. The earlier ML-pinned Docker image built successfully with ultralytics 8.3.155 and runtime imports (`torch`, `torchvision`, `transformers`, `ultralytics`, `albumentations`, `cv2`, `onnxruntime`, `scipy`) passed; `requirements.txt` now pins ultralytics 8.4.183 for YOLO11/YOLO26 weights, but that image has not been rebuilt in this change. Actual model inference was not exercised because no weights are included. Local Python 3.14 vs CI 3.12 is expected.
 
 CI runs the backend install → pytest → Docker build, and frontend install → lint → typecheck → build. A deployment counts only after the live host passes `/api/health/` and the full chat/diagnosis/booking/upload flow with CORS and HTTPS checked. Record the result; otherwise say "not deployed".
 
@@ -150,16 +169,19 @@ CI runs the backend install → pytest → Docker build, and frontend install �
 - Rate limiting is in-memory, per worker, and keyed on the client host; behind a proxy this depends on whether trusted proxy headers are configured. It resets on restart.
 - SQLite + local media: single instance only. Compose runs two Uvicorn workers; each has its own limiter, and SQLite serializes writes.
 - No Alembic/schema migrations; `create_all` only creates missing tables.
-- Media is stored, not understood or served: no image diagnosis, OCR, audio transcription, video analysis, admin UI, or `/media/` route.
+- Media is stored, not served: optional Ultralytics YOLO warning-light detection exists only when a model is configured; there is no OCR, audio transcription, video analysis, admin UI, or `/media/` route. Without `ENABLE_ML_INFERENCE=True` and a model, images are received-but-not-analyzed.
+- ML is off by default; no model weights, calibration file, or validated accuracy numbers are included. The `augment_nhtsa.py`/`create_calibration.py` workflows require manual data/model runs and are not covered by automated tests.
+- The ML dependency set is heavy (CPU PyTorch/Ultralytics/Transformers/ONNX); the Docker image grows substantially. The ML-pinned image builds and passes a no-model container smoke, but actual YOLO/transformer inference was not exercised without weights.
 - No TLS/HSTS in the app; terminate TLS at the edge/proxy.
 - No frontend unit/e2e tests; `docs/CHECKLIST.md` is a manual audit.
 - No live deployment or verified URL; `ec2-nginx.conf` and the deployment guide are prepared but unexecuted.
 
 ## Change rules
 
-- Add or update a test with every behavior change; never weaken an existing assertion to make a change pass. Keep all 37 green.
-- Keep endpoints, trailing slashes, status codes, and JSON field names stable; update `docs/API.md` and `src/api.ts` together.
-- Keep AI behind `ai_service.py`, deterministic fallbacks intact, and `ai_used` honest.
+- Add or update a test with every behavior change; never weaken an existing assertion to make a change pass. Keep all 71 tests green (the optional weights integration test skips when weights are absent).
+- Keep endpoints, trailing slashes, status codes, and JSON field names stable; update `docs/API.md` and `src/api.ts` together. `detections`, `reliable_labels`, `message`, and `vision` are additive upload keys, so the frontend may ignore them.
+- Keep AI behind `ai_service.py`, ML behind the optional services, deterministic fallbacks intact, and `ai_used` honest.
+- Keep `ENABLE_ML_INFERENCE=False` as the default; never make a model file, download, GPU, or ML library required for startup/tests.
 - Never log or return keys, raw provider errors, tracebacks, or filesystem paths; keep the secret-leak test green.
 - Do not add a framework, database, queue, or auth system without an explicit plan and user approval. The FastAPI migration is complete; do not restart it.
 - For model changes, add a real migration strategy first; do not assume `create_all` updates an existing database.

@@ -4,12 +4,13 @@ import uuid
 
 from app.config import settings
 
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
+VISION_IMAGE_EXTS = frozenset({".jpg", ".jpeg", ".png", ".webp"})
 AUDIO_EXTS = {".mp3", ".wav", ".ogg", ".m4a", ".webm"}
 VIDEO_EXTS = {".mp4", ".webm", ".mov", ".mkv", ".3gp"}
 ALLOWED_EXTS = IMAGE_EXTS | AUDIO_EXTS | VIDEO_EXTS
 
-IMAGE_MIMES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+IMAGE_MIMES = {"image/jpeg", "image/png", "image/webp"}
 AUDIO_MIMES = {
     "audio/mpeg",
     "audio/wav",
@@ -77,7 +78,7 @@ def validate_upload(uploaded_file) -> tuple[str, str]:
     ext = os.path.splitext(name)[1].lower()
     if not ext or ext not in ALLOWED_EXTS:
         raise ValueError(
-            f"Unsupported file type '{ext or 'unknown'}'. Allowed: images (jpg, png, webp), "
+            f"Unsupported file type '{ext or 'unknown'}'. Allowed: images (jpg, jpeg, png, webp), "
             "audio (mp3, wav, ogg, m4a), video (mp4, webm, mov)."
         )
     kind = classify(ext)
@@ -101,11 +102,10 @@ def validate_upload(uploaded_file) -> tuple[str, str]:
         head = b""
 
     if kind == "image":
-        # JPEG / PNG / GIF / WEBP magic.
+        # JPEG / PNG / WEBP magic.
         valid_magic = (
             head.startswith(b"\xff\xd8\xff")
             or head.startswith(b"\x89PNG")
-            or head.startswith(b"GIF8")
             or head.startswith(b"RIFF")
         )
         if not valid_magic:
