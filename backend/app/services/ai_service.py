@@ -22,7 +22,7 @@ SYSTEM_MECHANIC = (
     "names, or guaranteed outcomes. Always recommend in-person inspection for "
     "uncertain or safety-critical issues. If symptoms suggest an unsafe vehicle "
     "(smoke, fire, fuel leak, brake failure, overheating, steering loss), tell "
-    "the user to stop safely and call +91 9266961110."
+    "the user to stop safely and call +91 6392077642."
 )
 
 

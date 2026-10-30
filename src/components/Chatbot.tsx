@@ -70,7 +70,7 @@ export default function Chatbot({ open, onClose }: { open: boolean; onClose: () 
       setMsgs((m) => [...m, { role: 'assistant', content: r.reply, ai: r.ai_used }]);
       if (r.action === 'ready') setSuccess('I have enough detail — tap “Get diagnosis” when ready.');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong. Call +91 9266961110 for urgent help.');
+      setError(e instanceof Error ? e.message : 'Something went wrong. Call +91 6392077642 for urgent help.');
     } finally { setLoading(false); }
   }
 

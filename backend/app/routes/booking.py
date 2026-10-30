@@ -76,7 +76,7 @@ async def create_booking(
     output = booking_out(booking)
     output["message"] = (
         "Booking received. Our team will call to confirm. For urgent help call "
-        "+91 9266961110."
+        "+91 6392077642."
     )
     return JSONResponse(status_code=201, content=output)
 

@@ -76,7 +76,7 @@ def _ml_diagnosis(ml_result: dict, history: str) -> dict | None:
         "next_steps": [
             "Note when the symptom occurs (start, idle, driving, braking)",
             "Check dashboard warning lights and fluid levels if safe",
-            "Book a mechanic inspection or call +91 9266961110 for roadside help",
+            "Book a mechanic inspection or call +91 6392077642 for roadside help",
         ],
         "urgency": urgency,
         "drive_guidance": (
@@ -227,7 +227,7 @@ async def diagnosis(
             "next_steps": [
                 "Note when the symptom occurs (start, idle, driving, braking)",
                 "Check dashboard warning lights and fluid levels if safe",
-                "Book a mechanic inspection or call +91 9266961110 for roadside help",
+                "Book a mechanic inspection or call +91 6392077642 for roadside help",
             ],
             "urgency": "medium",
             "drive_guidance": (
@@ -247,7 +247,7 @@ async def diagnosis(
         diagnosis_payload["urgency"] = "critical"
         diagnosis_payload["drive_guidance"] = (
             "DO NOT DRIVE. Stop in a safe location, switch off the engine, and "
-            "call +91 9266961110."
+            "call +91 6392077642."
         )
         if not diagnosis_payload.get("safety_warning"):
             diagnosis_payload["safety_warning"] = (

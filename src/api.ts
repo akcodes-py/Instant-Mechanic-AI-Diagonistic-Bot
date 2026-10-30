@@ -64,7 +64,7 @@ async function req<T>(path: string, init?: RequestInit, _attempt = 0): Promise<T
       await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * Math.pow(2, _attempt)));
       return req<T>(path, init, _attempt + 1);
     }
-    throw new Error('Cannot reach server. Check your connection or try calling +91 9266961110.');
+    throw new Error('Cannot reach server. Check your connection or try calling +91 6392077642.');
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -141,9 +141,9 @@ export const api = {
 };
 
 export const CONTACT = {
-  phoneDisplay: '+91 9266961110',
-  phoneHref: 'tel:+919266961110',
-  whatsapp: 'https://wa.me/919266961110?text=Hi%20Instant%20Mechanic%2C%20I%20need%20roadside%20help.%20My%20location%3A%20',
-  email: 'gordhan@instantmechanic.online',
+  phoneDisplay: '+91 6392077642',
+  phoneHref: 'tel:+916392077642',
+  whatsapp: 'https://wa.me/916392077642?text=Hi%20Instant%20Mechanic%2C%20I%20need%20roadside%20help.%20My%20location%3A%20',
+  email: 'atul@instantmechanic.online',
   address: 'Sector 75, Southern Peripheral Road, Gurugram, Haryana, India',
 };

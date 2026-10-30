@@ -18,7 +18,7 @@ Fix list: ✅ = done & verified in this build.
 15. ✅ No unused nav — 4 anchors only, all mapped to sections.
 16. ✅ Mobile overflow — max-width 100vw, images bounded, sticky bar safe-area.
 17. ✅ Clickable logo — header logo → home.
-18. ✅ Clickable phones — `tel:+919266961110` everywhere incl. sticky bar.
+18. ✅ Clickable phones — `tel:+916392077642` everywhere incl. sticky bar.
 19. ✅ Clickable emails — `mailto:gordhan@instantmechanic.online`.
 20. ✅ Mobile optimized — stacked layouts, 44px+ targets, sticky emergency bar.
 

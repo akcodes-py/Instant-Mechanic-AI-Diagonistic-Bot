@@ -145,7 +145,7 @@ async def chat(
     if is_unsafe(message):
         reply += (
             " If you see smoke/fire or smell fuel, stop safely, switch off, "
-            "and call +91 9266961110 now."
+            "and call +91 6392077642 now."
         )
     db.add(
         ChatMessage(

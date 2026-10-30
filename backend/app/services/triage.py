@@ -241,13 +241,13 @@ def build_follow_up(session, user_text: str, history_count: int) -> dict:
     if SHORT_GENERIC.match(text) or is_greeting(text):
         return {
             "action": "greet",
-            "reply": "Namaste! I'm IM Buddy, your car assistant. Tell me your car model and what's wrong (sound, light, smell, or situation) and I'll guide you. For emergencies call +91 9266961110.",
+            "reply": "Namaste! I'm IM Buddy, your car assistant. Tell me your car model and what's wrong (sound, light, smell, or situation) and I'll guide you. For emergencies call +91 6392077642.",
             "needs_info": ["vehicle", "symptom"],
         }
     if not looks_car_related(text):
         return {
             "action": "reject",
-            "reply": "I can only help with car/mechanical questions (breakdown, noise, warning lights, battery, tyre, towing, fuel, keys). Please describe your car issue, or call +91 9266961110 for roadside help.",
+            "reply": "I can only help with car/mechanical questions (breakdown, noise, warning lights, battery, tyre, towing, fuel, keys). Please describe your car issue, or call +91 6392077642 for roadside help.",
             "needs_info": [],
         }
     rule = find_rule(text)

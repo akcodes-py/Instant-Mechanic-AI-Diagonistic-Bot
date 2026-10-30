@@ -88,4 +88,4 @@ Code quality (typed frontend, layered FastAPI backend), API design (Pydantic sch
 Not deployed yet — see docs/DEPLOYMENT.md for S3 + CloudFront (frontend) and AWS EC2 (backend) steps. No URLs fabricated.
 
 ## Business claims
-Metrics (30,000+ cars, 4.9★, 20-min SLA) are shown as business claims with an "unverified" note, per audit. Contact flows preserved: `tel:+919266961110`, `https://wa.me/919266961110`, `gordhan@instantmechanic.online`, Sector 75 Gurugram.
+Metrics (30,000+ cars, 4.9★, 20-min SLA) are shown as business claims with an "unverified" note, per audit. Contact flows preserved: `tel:+916392077642`, `https://wa.me/916392077642`, `atul@instantmechanic.online`, Sector 75 Gurugram.
