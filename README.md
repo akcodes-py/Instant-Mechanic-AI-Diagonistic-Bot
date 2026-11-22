@@ -95,7 +95,9 @@ Code quality (typed frontend, layered FastAPI backend), API design (Pydantic sch
 
 ### 1. Executive Summary
 
-We are evolving Instant Mechanic from a standalone AI car diagnostic chatbot into a real-time **Local Mechanic Supply & Dispatch Management System** for Delhi NCR (Gurugram). Modeled directly on how Uber manages its driver fleet, the platform connects stranded drivers with nearby, skill-matched local mechanics using Uber's **H3 Hexagonal Spatial Index**, event-driven **Kafka** streaming, **ML-ranked ETA dispatch**, **Polyglot Persistence**, and **atomic concurrency locks**.
+**Coverage: the whole Delhi NCR (National Capital Region).** Gurugram / Sector 75 is only the simulator's demo grid, not the boundary of the system.
+
+We are evolving Instant Mechanic from a standalone AI car diagnostic chatbot into a real-time **Local Mechanic Supply & Dispatch Management System** for Delhi NCR. Modeled directly on how Uber manages its driver fleet, the platform connects stranded drivers with nearby, skill-matched local mechanics using Uber's **H3 Hexagonal Spatial Index**, event-driven **Kafka** streaming, **ML-ranked ETA dispatch**, **Polyglot Persistence**, and **atomic concurrency locks**.
 
 ### 2. Core Objectives
 
@@ -137,7 +139,9 @@ Each database handles the exact workload it was designed for, linked across serv
 | Resolution | Approx. edge | Use |
 |:--|:--|:--|
 | 8 | ~460 m | Live mechanic presence in Cassandra and ring-expansion dispatch (k=1 = 7 hexes, k=2 = 19 hexes, k=3 = 37 hexes). |
-| 7 | ~1.22 km | Kafka partition key (localizes city-zone traffic), React supply/demand heatmaps, PySpark analytics. |
+| 7 | ~1.22 km | Kafka partition key (localizes city-zone traffic across Delhi NCR), React supply/demand heatmaps, PySpark analytics. |
+
+The grid is a region-wide NCR design: Res-8 drives fine-grained dispatch anywhere in the NCR, Res-7 partitions Kafka traffic by local zone. The demo centre below is a single sample zone, not a coverage limit.
 
 **End-to-end event flow**
 
