@@ -28,8 +28,11 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: gradle
-      - run: ./gradlew test --no-daemon --console=plain
+      - name: Run Gradle tests
         working-directory: dispatch-service
+        run: |
+          chmod +x ./gradlew
+          ./gradlew test --no-daemon --console=plain
   infra:
     runs-on: ubuntu-latest
     steps:
