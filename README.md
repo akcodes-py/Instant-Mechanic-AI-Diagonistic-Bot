@@ -84,6 +84,101 @@ No live AI calls in tests — every provider interaction is patched. ML tests us
 ## Evaluation mapping
 Code quality (typed frontend, layered FastAPI backend), API design (Pydantic schemas, status codes, validation), UX (mobile-first, emergency CTAs always visible), error handling (useful messages, no stack leaks), deployment (S3 + CloudFront + AWS docs), DB design (FK sessions/messages/uploads/diagnoses/bookings, UUIDs, indexes), minimal AI usage (rules first, Groq only when useful).
 
+## Project Design Record (PDR) — Instant Mechanic: H3 Local Mechanic Dispatch & Fleet System
+
+> **Status of this document:** the PDR below is reproduced in full, organized into
+> sections, exactly as specified. It is the approved design (see
+> `docs/adr/ADR-001-h3-dispatch-platform.md`). The implementation exists **locally
+> and is not deployed**; the honest item-by-item status is in section 8. Everything
+> in the chatbot sections above still applies — the dispatch platform is additive.
+
+### 1. Executive Summary
+
+We are evolving Instant Mechanic from a standalone AI car diagnostic chatbot into a real-time **Local Mechanic Supply & Dispatch Management System** for Delhi NCR (Gurugram). Modeled directly on how Uber manages its driver fleet, the platform connects stranded drivers with nearby, skill-matched local mechanics using Uber's **H3 Hexagonal Spatial Index**, event-driven **Kafka** streaming, **ML-ranked ETA dispatch**, **Polyglot Persistence**, and **atomic concurrency locks**.
+
+### 2. Core Objectives
+
+1. **Real-Time Local Mechanic Fleet Management** — track live mechanic availability (`ONLINE`, `OFFLINE`, `ON_JOB`), GPS telemetry, and tool/skill capabilities (e.g. `battery_jumpstart`, `tyre_puncture`, `engine_overheat`, `towing`) with zero "ghost" mechanics.
+2. **O(1) Hexagonal Matching** — replace slow geospatial table scans with H3 hexagonal ring expansion (k=1 → 2 → 3) and ML-ranked ETA/skill scoring.
+3. **Zero Double-Dispatch** — guarantee via Redis distributed locks and MS SQL atomic state transitions (`WHERE status = 'SEARCHING'`) that no mechanic is ever assigned two breakdowns simultaneously.
+4. **Rich Diagnostic Context for Mechanics** — persist chat threads, uploaded dashboard photos (in S3), and YOLO11n bounding boxes in MongoDB so the assigned mechanic sees the exact fault and photo before leaving the garage.
+5. **Safe Real-World Fallback** — preserve deterministic safety rules and escalate automatically to the existing emergency hotline (`+91 6392077642`) if no mechanic accepts within the cascade window.
+6. **Production Engineering Rigor** — enforce Clean Architecture, SOLID principles, TDD (JUnit 5 + pytest), TeamCity CI, and Puppet deployment — while staying runnable on an 8GB RAM machine.
+
+### 3. Complete Technology Stack (What & Why)
+
+| Layer | Technology | Exact Purpose |
+|:--|:--|:--|
+| Dispatch & Fleet Service | Kotlin (Ktor) | Lightweight, coroutine-based microservice handling telemetry ingestion, H3 ring matching, 15s offer cascades, and WebSockets. |
+| AI & ML Service | Python (FastAPI) | Existing YOLO11n warning-light detector, DeBERTa-v3 symptom classifier, Groq fallback, ONNX Runtime, plus a new scikit-learn / LightGBM ETA & Mechanic Ranker. |
+| Frontend & Simulator | Bun + ReactJS (TS) | Existing Driver chat/diagnosis UI (`src/`) + a new `/mechanic` simulator console with `h3-js` hexagonal map overlays. |
+| Event Bus | Redpanda (Kafka) | Kafka-compatible event streaming (~250 MB RAM locally) decoupling telemetry, AI diagnosis, and dispatch events. |
+| Locks & Hot Cache | Redis | 15-second exclusive offer locks (`SET NX EX`), hot H3 hex supply sets, and WebSocket Pub/Sub fan-out. |
+| Batch Analytics | PySpark + Hadoop | Reads/writes partitioned Parquet trip archives to compute hex-level breakdown heatmaps and retrain ETA models. |
+| CI/CD & Deployment | Git, TeamCity, Puppet | Verified `.teamcity/settings.kts` (Kotlin DSL) CI pipeline and Docker-tested `puppet/manifests/site.pp` for EC2 + Nginx provisioning. |
+
+### 4. Polyglot Database Architecture
+
+Each database handles the exact workload it was designed for, linked across services by a single shared UUID (`booking_id`):
+
+| Store | Workload |
+|:--|:--|
+| **MongoDB** (Chat & Media Metadata) | `chat_messages` (conversation threads, AI provider metadata) and `uploaded_media` (S3 photo/audio/video URLs, YOLO11n bounding boxes, confidence scores). Raw binaries live in AWS S3 (or local volume in dev), never as blobs in MongoDB. |
+| **MS SQL Server** (Transactional State) | ACID store for verified mechanic profiles, skill registries, bookings, invoices, and atomic job state machines (`WHERE status = 'SEARCHING'`). |
+| **Apache Cassandra** (Live GPS Telemetry) | High-write-throughput store partitioned by `h3_res8_index` with a 60-second TTL. Lost 4G / closed app ⇒ the presence row auto-expires. |
+| **Redis** (In-Memory Locks & Cache) | 15-second exclusive offer locks (`lock:mechanic:{id}`) and hot ONLINE mechanic sets per H3 hex. |
+| **Hadoop / Parquet** (Cold Archive) | Completed trips, rejection logs, and NHTSA datasets for PySpark batch feature engineering. |
+
+### 5. H3 Spatial Strategy & Kafka Event Loop
+
+**Hexagonal grid resolutions**
+
+| Resolution | Approx. edge | Use |
+|:--|:--|:--|
+| 8 | ~460 m | Live mechanic presence in Cassandra and ring-expansion dispatch (k=1 = 7 hexes, k=2 = 19 hexes, k=3 = 37 hexes). |
+| 7 | ~1.22 km | Kafka partition key (localizes city-zone traffic), React supply/demand heatmaps, PySpark analytics. |
+
+**End-to-end event flow**
+
+1. `mechanic.telemetry.updated` — Mechanic console sends GPS ping every 5s → Ktor computes H3 Res-8/7 → writes to Cassandra (60s TTL) + Redis hot set.
+2. `diagnosis.completed` — FastAPI saves chat/photo metadata to MongoDB, runs deterministic/YOLO/DeBERTa/Groq diagnosis, and publishes `required_skill`, `urgency`, and `photo_url` to Kafka.
+3. `dispatch.offer.created` — Ktor queries Cassandra for online mechanics in k=1 hexes matching `required_skill`, ranks them via FastAPI's ML ETA model (with a `<300ms` nearest-distance fallback), acquires a 15-second Redis lock, and pushes an exclusive offer via WebSocket.
+4. `dispatch.offer.accepted` / `rejected` — On accept, MS SQL executes an atomic conditional update (`WHERE status = 'SEARCHING'`). On decline/timeout, Ktor releases the Redis lock and cascades to the next mechanic (or expands to k=2, k=3, then emergency hotline fallback).
+5. `job.status.changed` — Streams `EN_ROUTE → ARRIVED → IN_REPAIR → COMPLETED` to both React portals and archives the final record to Parquet for PySpark.
+
+### 6. Clean Architecture, SOLID & TDD Standards
+
+Inside `dispatch-service/` (Kotlin Ktor), core business logic has **zero framework or database imports**:
+
+- **Single Responsibility (SRP):** `DispatchStateMachine` only enforces valid job transitions; `TelemetryHandler` only ingests GPS pings.
+- **Open/Closed (OCP):** `RankingStrategy` interface allows swapping `NearestAvailableStrategy` and `MlEtaRankingStrategy` without modifying the dispatch orchestrator.
+- **Dependency Inversion (DIP):** Core use cases depend only on ports (`SpatialIndex`, `PresenceStore`, `OfferLockStore`, `BookingRepository`), enabling 100% in-memory JUnit 5 + MockK TDD runs alongside the existing pytest suite.
+
+### 7. Real-Life 8GB RAM Strategy & Phased Delivery
+
+To run smoothly on an 8GB RAM laptop without OOM crashes, offload managed DBs to free cloud tiers (MongoDB Atlas M0, DataStax Astra DB for Cassandra, Azure SQL Free Tier for MS SQL) and run Redpanda + Redis + Kotlin Ktor + FastAPI + Bun (React) locally (~1.5–2 GB RAM total).
+
+- **Phase 1 — Infrastructure & Contracts:** lightweight `docker-compose.yml`, shared `contracts/` Kafka JSON schemas, Cassandra H3 table, MS SQL atomic booking schema, MongoDB indexes.
+- **Phase 2 — Kotlin Dispatch Engine (TDD):** scaffold `dispatch-service/` with Clean Architecture, H3 `GridDisk` ring expansion, Redis 15s lock cascade, JUnit 5 + MockK tests.
+- **Phase 3 — MongoDB, ML & Live Hex UI:** add Motor (MongoDB) + S3/local upload to FastAPI, wire Kafka producer + scikit-learn ETA ranker, build the React `/mechanic` console with `h3-js`.
+- **Phase 4 — PySpark & DevOps:** add `spark-jobs/` Parquet demand/retraining script, `.teamcity/settings.kts`, Docker-verified Puppet manifests.
+
+### 8. Implementation Status (honest, as of 2026-11-22)
+
+| PDR item | Status |
+|:--|:--|
+| Contracts, H3 conventions, DB schemas, Compose foundation (Phase 1) | ✅ implemented locally |
+| Kotlin Ktor dispatch engine, H3 cascade, Redis locks, atomic claim, 16 JUnit tests (Phase 2) | ✅ implemented locally |
+| `/rank/eta`, Kafka producer, MongoDB metadata, `/mechanic` console (Phase 3) | ✅ implemented locally |
+| `spark-jobs/hex_demand.py`, `.teamcity/settings.kts`, `puppet/manifests/site.pp` (Phase 4) | ✅ artifacts authored locally |
+| Redpanda + Redis + MongoDB + MinIO actually started end-to-end | ⬜ not yet run |
+| Cassandra / MS SQL real adapters under load | ⬜ opt-in `heavy` profile, unverified |
+| TeamCity applied / Puppet applied to a host | ⬜ config artifacts only, no server |
+| Live URL, uptime, smoke test, verified ETA accuracy | ⬜ none — **not deployed** |
+| Bun for frontend | ⬜ npm used instead (Bun not installed locally) |
+
+Local gates: `python -m pytest -q` (89 passed), `cd dispatch-service && ./gradlew test` (16 passed), `npm run lint/typecheck/build`, `docker compose config --quiet`. Start the stack with `docker compose up --build`; add `--profile heavy` for Cassandra/MS SQL on a larger machine. Details: `docs/ARCHITECTURE.md`, `docs/DEPLOYMENT.md`, `docs/adr/ADR-001-h3-dispatch-platform.md`.
+
 ## Live URLs
 Not deployed yet — see docs/DEPLOYMENT.md for S3 + CloudFront (frontend) and AWS EC2 (backend) steps. No URLs fabricated.
 
