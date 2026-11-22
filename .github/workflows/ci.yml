@@ -37,6 +37,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # .env is gitignored; seed the tracked template so Compose can validate.
+      - run: cp .env.example .env
       - run: docker compose config --quiet
   frontend:
     runs-on: ubuntu-latest
