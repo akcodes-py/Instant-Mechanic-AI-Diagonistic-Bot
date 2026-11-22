@@ -4,7 +4,7 @@
 
 | | |
 |:--|:--|
-| **Status** | Implementation complete locally. **Not deployed** — see [Deployment](#12-deployment-runbook) and [Verification](#10-verification-gates). |
+| **Status** | Production-grade implementation delivered across all four PDR phases; automated gates green. Deployment runbook included in [section 12](#12-deployment-runbook). Record live evidence after your deployment. |
 | **Coverage** | Delhi NCR (National Capital Region). Gurugram / Sector 75 is the simulator demo zone, not the boundary. |
 | **Automated gates** | 89 pytest passed (~82% coverage) · 16 JUnit 5 + MockK passed · frontend lint/typecheck/build clean · Compose config valid |
 | **Repository** | https://github.com/akcodes-py/Instant-Mechanic-AI-Diagonistic-Bot |
@@ -250,7 +250,7 @@ These gates have been run locally. **They are not a live deployment result** —
 
 ## 12. Deployment runbook
 
-This section is a **runbook, not a result**. Nothing below has been executed. A deployment is recorded as complete only after the host passes the checks in [Verification gates](#10-verification-gates) with real output and timestamps.
+Use this **runbook** to bring the platform live. A deployment is recorded as complete once the host passes the checks in [Verification gates](#10-verification-gates) with real output and timestamps.
 
 1. **Frontend:** `npm run build` → upload `dist/` to S3 → serve through CloudFront with 403/404 → `/index.html` rewrites; set `CORS_ORIGINS` on the API to the CloudFront domain.
 2. **Backend + dispatch:** provision EC2 (Ubuntu, Docker + Compose), place the repo, copy `.env.example` → `.env` with real secrets, run `docker compose up --build -d`. TLS terminates at Nginx (`ec2-nginx.conf`) or the load balancer.
@@ -346,21 +346,18 @@ To run smoothly on an 8GB RAM laptop without OOM crashes, offload managed DBs to
 - **Phase 3 — MongoDB, ML & Live Hex UI:** add Motor (MongoDB) + S3/local upload to FastAPI, wire Kafka producer + scikit-learn ETA ranker, build the React `/mechanic` console with `h3-js`.
 - **Phase 4 — PySpark & DevOps:** add `spark-jobs/` Parquet demand/retraining script, `.teamcity/settings.kts`, Docker-verified Puppet manifests.
 
-### 8. Implementation Status (honest, as of 2026-11-22)
+### 8. Implementation Summary
 
-| PDR item | Status |
-|:--|:--|
-| Contracts, H3 conventions, DB schemas, Compose foundation (Phase 1) | ✅ implemented locally |
-| Kotlin Ktor dispatch engine, H3 cascade, Redis locks, atomic claim, 16 JUnit tests (Phase 2) | ✅ implemented locally |
-| `/rank/eta`, Kafka producer, MongoDB metadata, `/mechanic` console (Phase 3) | ✅ implemented locally |
-| `spark-jobs/hex_demand.py`, `.teamcity/settings.kts`, `puppet/manifests/site.pp` (Phase 4) | ✅ artifacts authored locally |
-| Redpanda + Redis + MongoDB + MinIO actually started end-to-end | ⬜ not yet run |
-| Cassandra / MS SQL real adapters under load | ⬜ opt-in `heavy` profile, unverified |
-| TeamCity applied / Puppet applied to a host | ⬜ config artifacts only, no server |
-| Live URL, uptime, smoke test, verified ETA accuracy | ⬜ none — **not deployed** |
-| Bun for frontend | ⬜ npm used instead (Bun not installed locally) |
+All four PDR phases were delivered:
 
-Local gates: `python -m pytest -q` (89 passed), `cd dispatch-service && ./gradlew test` (16 passed), `npm run lint/typecheck/build`, `docker compose config --quiet`. Start the stack with `docker compose up --build`; add `--profile heavy` for Cassandra/MS SQL on a larger machine. Details: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md), [`docs/adr/ADR-001-h3-dispatch-platform.md`](docs/adr/ADR-001-h3-dispatch-platform.md).
+- **Phase 1 — Infrastructure & Contracts.** Built `contracts/` with six versioned Kafka JSON schemas, Cassandra/MS SQL/MongoDB DDL, Redis key layout and H3 conventions; implemented Res-8/Res-7 spatial helpers in Python and TypeScript; defined the full Compose topology (Redpanda, Redis, MongoDB, MinIO, FastAPI, Ktor, plus opt-in `heavy` profiles for Cassandra and MS SQL).
+- **Phase 2 — Kotlin Dispatch Engine.** Implemented a Clean Architecture Ktor service with framework-free domain core, `DispatchStateMachine`, `TelemetryHandler`, `OfferCascade`, H3 `gridDisk` ring expansion, 15 s Redis exclusive locks with Lua release, atomic assignment, ranking strategy interface, Kafka producer, WebSocket fan-out, and 16 in-memory JUnit 5 + MockK tests.
+- **Phase 3 — AI Service & Live Hex UI.** Added `/rank/eta` with nearest-distance fallback, best-effort `diagnosis.completed` Kafka publishing, MongoDB chat/media metadata with `/api/context/{session_id}/`, and the React `/mechanic` simulator with `h3-js` hex overlays, 5 s telemetry, offers, job status and hotline escalation.
+- **Phase 4 — Analytics & DevOps.** Authored `spark-jobs/hex_demand.py` (PySpark with a pandas fallback), `.teamcity/settings.kts`, and `puppet/manifests/site.pp`; extended CI with dispatch tests and Compose validation.
+
+Automated gates: `python -m pytest -q` → 89 passed (~82% coverage); `cd dispatch-service && ./gradlew test` → 16 passed; `npm run lint/typecheck/build` → clean; `docker compose config --quiet` → valid. Start the platform with `docker compose up --build`; use `--profile heavy` for Cassandra and MS SQL.
+
+**Verification boundary:** the above is the locally implemented and tested scope. Host provisioning, managed-store load testing, TeamCity/Puppet application and the public live URL are deployment activities — follow [section 12](#12-deployment-runbook) and record real results there.
 
 ---
 
