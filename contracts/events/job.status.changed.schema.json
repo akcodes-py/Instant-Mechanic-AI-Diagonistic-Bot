@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://instantmechanic.online/contracts/events/job.status.changed.schema.json",
+  "title": "JobStatusChanged",
+  "allOf": [{ "$ref": "common.schema.json" }],
+  "properties": {
+    "event_type": { "const": "job.status.changed" },
+    "mechanic_id": { "type": "string", "format": "uuid" },
+    "from_status": { "type": "string", "enum": ["SEARCHING", "OFFERED", "ASSIGNED", "EN_ROUTE", "ARRIVED", "IN_REPAIR", "COMPLETED", "ESCALATED"] },
+    "to_status": { "type": "string", "enum": ["SEARCHING", "OFFERED", "ASSIGNED", "EN_ROUTE", "ARRIVED", "IN_REPAIR", "COMPLETED", "ESCALATED"] },
+    "changed_at": { "type": "string", "format": "date-time" },
+    "invoice_id": { "type": "string", "format": "uuid" }
+  },
+  "required": ["event_type", "from_status", "to_status", "changed_at"]
+}

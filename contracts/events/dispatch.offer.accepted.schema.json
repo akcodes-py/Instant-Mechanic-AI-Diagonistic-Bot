@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://instantmechanic.online/contracts/events/dispatch.offer.accepted.schema.json",
+  "title": "DispatchOfferAccepted",
+  "allOf": [{ "$ref": "common.schema.json" }],
+  "properties": {
+    "event_type": { "const": "dispatch.offer.accepted" },
+    "offer_id": { "type": "string", "format": "uuid" },
+    "mechanic_id": { "type": "string", "format": "uuid" },
+    "accepted_at": { "type": "string", "format": "date-time" }
+  },
+  "required": ["event_type", "offer_id", "mechanic_id", "accepted_at"]
+}

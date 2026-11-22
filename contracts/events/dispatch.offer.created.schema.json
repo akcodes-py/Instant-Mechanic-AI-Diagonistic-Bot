@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://instantmechanic.online/contracts/events/dispatch.offer.created.schema.json",
+  "title": "DispatchOfferCreated",
+  "allOf": [{ "$ref": "common.schema.json" }],
+  "properties": {
+    "event_type": { "const": "dispatch.offer.created" },
+    "offer_id": { "type": "string", "format": "uuid" },
+    "mechanic_id": { "type": "string", "format": "uuid" },
+    "h3_res8_index": { "type": "string" },
+    "ring": { "type": "integer", "minimum": 1, "maximum": 3 },
+    "eta_seconds": { "type": "integer", "minimum": 0 },
+    "rank_score": { "type": "number", "minimum": 0, "maximum": 1 },
+    "expires_at": { "type": "string", "format": "date-time" }
+  },
+  "required": ["event_type", "offer_id", "mechanic_id", "h3_res8_index", "ring", "expires_at"]
+}

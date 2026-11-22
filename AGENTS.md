@@ -1,5 +1,17 @@
 # AGENTS.md — Instant Mechanic
 
+> **Current state (2026-11-22):** `docs/adr/ADR-001-h3-dispatch-platform.md` is the
+> explicit user-approved decision that supersedes this file's single-process scope
+> (no new DB/queue/framework, S3+CloudFront/EC2-only deployment). The additive H3
+> dispatch layer is now part of the repo: `contracts/`, `dispatch-service/`,
+> `spark-jobs/`, `.teamcity/`, `puppet/`, the `/mechanic` console, and new FastAPI
+> services (`spatial`, `ranker`, `event_bus`, `mongo_store`). The old rules below
+> still bind the **original** chat → diagnosis → booking flow and its safety,
+> honesty and secret-handling invariants. Measured gates: **89 pytest passed**,
+> **16 JUnit 5 passed** (`cd dispatch-service && ./gradlew test`), frontend
+> lint/typecheck/build clean (2 pre-existing warnings), `docker compose config --quiet`
+> OK. Still **not deployed**. Where a number below disagrees, use these measured ones.
+
 ## Repo state
 
 - AI car-mechanic chatbot plus marketing site for Delhi NCR: chat → diagnosis → booking, with roadside-help CTAs. Assignment/portfolio project, anonymous sessions (no auth).

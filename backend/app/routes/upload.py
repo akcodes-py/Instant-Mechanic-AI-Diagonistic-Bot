@@ -13,6 +13,7 @@ from app.config import settings
 from app.database import get_db
 from app.models import ChatMessage, MediaUpload
 from app.routes.common import error_response
+from app.services import mongo_store
 from app.services.media import VISION_IMAGE_EXTS, safe_filename, validate_upload
 from app.services.preprocessing import preprocess_for_inference
 from app.services.session_store import get_session
@@ -251,6 +252,18 @@ async def upload(
         )
     )
     await db.commit()
+
+    # Best-effort metadata copy for the mechanic console (ADR-001). Raw bytes
+    # stay on local disk/S3; only keys and real detections are stored in MongoDB.
+    await mongo_store.store_upload(
+        session.id,
+        upload_row.file_path,
+        kind,
+        size_bytes,
+        bool(upload_row.analyzed),
+        detections,
+        reliable_labels,
+    )
 
     return JSONResponse(
         status_code=201,

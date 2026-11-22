@@ -44,6 +44,26 @@ class Settings(BaseSettings):
     NLP_MODEL_PATH: str = ""
     ENABLE_ML_INFERENCE: bool = False
 
+    # H3 dispatch platform (ADR-001). All optional: empty/unreachable values keep
+    # the deterministic chat -> diagnosis -> booking flow working unchanged.
+    H3_PRESENCE_RESOLUTION: int = 8
+    H3_ZONE_RESOLUTION: int = 7
+    DISPATCH_MAX_RING: int = 3
+    OFFER_TTL_SECONDS: int = 15
+    REDPANDA_BROKERS: str = "localhost:9092"
+    REDIS_URL: str = "redis://localhost:6379/0"
+    MONGODB_URL: str = "mongodb://localhost:27017"
+    MONGODB_DB: str = "instant_mechanic"
+    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ACCESS_KEY: str = "minioadmin"
+    MINIO_SECRET_KEY: str = "minioadmin"
+    MINIO_BUCKET: str = "instant-mechanic-media"
+    MINIO_SECURE: bool = False
+    DISPATCH_SERVICE_URL: str = "http://localhost:8080"
+    ENABLE_MONGO: bool = False
+    MONGO_TIMEOUT_MS: int = 500
+    ETA_MODEL_PATH: str = ""
+
     @property
     def cors_origins(self) -> list[str]:
         raw = self.CORS_ORIGINS or self.CORS_ALLOWED_ORIGINS

@@ -19,6 +19,22 @@ jobs:
           DEBUG: "True"
           GROQ_API_KEY: ""
       - run: docker build -f Dockerfile.backend -t instant-mechanic-backend:ci .
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - run: ./gradlew test --no-daemon --console=plain
+        working-directory: dispatch-service
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config --quiet
   frontend:
     runs-on: ubuntu-latest
     steps:

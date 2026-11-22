@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routes import booking, chat, diagnosis, health, history, upload
+from app.routes import booking, chat, context, diagnosis, health, history, ranker, upload
 
 
 @asynccontextmanager
@@ -46,3 +46,6 @@ app.include_router(upload.router, prefix="/api")
 app.include_router(diagnosis.router, prefix="/api")
 app.include_router(booking.router, prefix="/api")
 app.include_router(history.router, prefix="/api")
+app.include_router(context.router, prefix="/api")
+# H3 dispatch integration (ADR-001). /rank/eta is called by the Kotlin service.
+app.include_router(ranker.router)

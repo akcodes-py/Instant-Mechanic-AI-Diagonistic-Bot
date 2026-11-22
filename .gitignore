@@ -19,6 +19,11 @@ backend/media/
 backend/staticfiles/
 /data/
 
+# Kotlin / Gradle generated artifacts
+.gradle/
+build/
+dispatch-service/data/
+
 # Python tests / generated artifacts
 __pycache__/
 *.py[cod]

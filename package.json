@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "h3-js": "^4.5.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CONTACT } from '../api';
 
-export type Page = 'home' | 'privacy' | 'terms' | 'refund' | 'notfound';
+export type Page = 'home' | 'mechanic' | 'privacy' | 'terms' | 'refund' | 'notfound';
 
 export function Header({ go, onBook }: { go: (p: Page) => void; onBook: () => void }) {
   const [open, setOpen] = useState(false);
@@ -20,6 +20,7 @@ export function Header({ go, onBook }: { go: (p: Page) => void; onBook: () => vo
           <a href="#diagnosis" className="hover:text-amber-300">AI Diagnosis</a>
           <a href="#membership" className="hover:text-amber-300">Membership</a>
           <a href="#coverage" className="hover:text-amber-300">Coverage</a>
+          <button onClick={() => go('mechanic')} className="hover:text-amber-300">Mechanic Console</button>
         </nav>
         <div className="hidden items-center gap-2 md:flex">
           <a href={CONTACT.phoneHref} className="rounded-lg border border-amber-400/40 px-3 py-2 text-sm font-bold text-amber-300 hover:bg-amber-400/10">📞 {CONTACT.phoneDisplay}</a>
@@ -37,6 +38,7 @@ export function Header({ go, onBook }: { go: (p: Page) => void; onBook: () => vo
             <a href="#diagnosis" onClick={() => setOpen(false)} className="rounded-lg px-2 py-2 hover:bg-white/5">AI Diagnosis</a>
             <a href="#membership" onClick={() => setOpen(false)} className="rounded-lg px-2 py-2 hover:bg-white/5">Membership</a>
             <a href="#coverage" onClick={() => setOpen(false)} className="rounded-lg px-2 py-2 hover:bg-white/5">Coverage</a>
+            <button onClick={() => { setOpen(false); go('mechanic'); }} className="rounded-lg px-2 py-2 text-left hover:bg-white/5">🛠️ Mechanic Console</button>
             <div className="mt-1 grid grid-cols-2 gap-2">
               <a href={CONTACT.phoneHref} className="rounded-lg bg-amber-400 px-3 py-2 text-center text-sm font-extrabold text-black">📞 Call Now</a>
               <a href={CONTACT.whatsapp} target="_blank" rel="noreferrer" className="rounded-lg border border-emerald-400/50 px-3 py-2 text-center text-sm font-bold text-emerald-300">💬 WhatsApp</a>

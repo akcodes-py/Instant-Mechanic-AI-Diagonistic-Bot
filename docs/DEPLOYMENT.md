@@ -92,3 +92,30 @@ aws s3 sync dist/ s3://<bucket-name>/ --delete
 - Frontend: `https://<cloudfront-url>`
 - Backend: `http://<ec2-ip>/api/health/`
 - Submit: https://forms.gle/Q82YpwYYhoZJTMTg6
+
+---
+
+## H3 dispatch platform — deployment status (ADR-001)
+
+**Nothing below is deployed or verified.** Local Compose only.
+
+```powershell
+docker compose up --build            # Redpanda, Redis, MongoDB, MinIO, FastAPI, Ktor
+docker compose --profile heavy up    # + Cassandra and MS SQL (needs >8 GB RAM)
+```
+
+New services and ports: Ktor dispatch `:8081`, Redpanda `:9092`, Redis `:6379`,
+MongoDB `:27017`, MinIO `:9000`/`:9001`. Set `VITE_DISPATCH_URL` for the frontend
+console. The Flask-style admin UI does not exist; the `/mechanic` console is a
+synthetic simulator, not a real fleet tool.
+
+Production shape (not executed): S3 + CloudFront for `dist/`, EC2 + Docker
+Compose + Nginx for the API and dispatch service, with MongoDB Atlas M0, DataStax
+Astra, Azure SQL Free and S3 as the offloaded stores. TLS terminates at
+CloudFront/Nginx; the app does not redirect HTTP itself.
+
+`.teamcity/settings.kts` and `puppet/manifests/site.pp` are committed artifacts.
+No TeamCity or Puppet server was available, so neither has been applied. A
+deployment counts only after the live host passes `/api/health/`, `/api/dispatch/health/`,
+and the full chat → diagnosis → booking → telemetry → offer → accept flow with CORS
+and HTTPS checked.
