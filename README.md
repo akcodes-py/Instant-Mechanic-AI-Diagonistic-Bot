@@ -7,7 +7,7 @@
 | **Status** | Production-grade implementation delivered across all four PDR phases; automated gates green. Deployment runbook included in [section 12](#12-deployment-runbook). Record live evidence after your deployment. |
 | **Coverage** | Delhi NCR (National Capital Region). Gurugram / Sector 75 is the simulator demo zone, not the boundary. |
 | **Automated gates** | 89 pytest passed (~82% coverage) · 16 JUnit 5 + MockK passed · frontend lint/typecheck/build clean · Compose config valid |
-| **Repository** | https://github.com/akcodes-py/Instant-Mechanic-AI-Diagonistic-Bot |
+| **Repository** | https://github.com/akcodes-py/Instant-Mechanic-AI-Diagnostic-Bot |
 
 ---
 
