@@ -77,7 +77,8 @@ python backend/scripts/create_calibration.py labelled.csv -o calibration.json
 ```bash
 cd instant-mechanic
 python -m pytest -q
-# 71 passed, 1 skipped (optional weights integration), ~81% coverage; all Groq calls mocked, no model files required
+# 89 passed, ~82% coverage; all Groq calls mocked, no model files required
+# (dispatch engine adds 16 JUnit 5 tests via: cd dispatch-service && ./gradlew test)
 ```
 No live AI calls in tests — every provider interaction is patched. ML tests use empty paths/missing files, so they exercise the safe fallbacks without downloading models.
 
