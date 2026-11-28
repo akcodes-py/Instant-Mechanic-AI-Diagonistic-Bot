@@ -47,6 +47,27 @@ jobs:
           # not block; fixable HIGH/CRITICAL findings still fail the build.
           ignore-unfixed: true
 
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - name: Run Gradle tests
+        working-directory: dispatch-service
+        run: |
+          chmod +x ./gradlew
+          ./gradlew test --no-daemon --console=plain
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # .env is gitignored; seed the tracked template so Compose can validate.
+      - run: cp .env.example .env
+      - run: docker compose config --quiet
   frontend:
     runs-on: ubuntu-latest
     steps:

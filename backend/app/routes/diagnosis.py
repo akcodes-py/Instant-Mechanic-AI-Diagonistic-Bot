@@ -20,6 +20,7 @@ from app.security.output_safety import (
     hazards_from_text,
 )
 from app.services import ai_service
+from app.services import ai_service, event_bus, mongo_store
 from app.services.calibration import (
     ConformalPredictor,
     TemperatureScaler,
@@ -359,4 +360,20 @@ async def diagnosis(
     output = diagnosis_out(diagnosis_row)
     output["disclaimer"] = disclaimer
     output["ai_used"] = ai_used
+
+    # H3 dispatch integration (ADR-001): best-effort only. No queue, broker or
+    # MongoDB failure may change the diagnosis response or the safety overrides.
+    try:
+        await run_in_threadpool(
+            event_bus.publish_diagnosis_completed,
+            session_id=session.id,
+            diagnosis_id=str(diagnosis_row.id),
+            recommended_service=recommended_service,
+            urgency=urgency,
+            summary=diagnosis_row.summary,
+        )
+    except Exception:
+        logger.warning("dispatch event hook failed", exc_info=False)
+    await mongo_store.store_message(session.id, "assistant", diagnosis_row.summary, ai_used)
+
     return JSONResponse(status_code=201, content=output)

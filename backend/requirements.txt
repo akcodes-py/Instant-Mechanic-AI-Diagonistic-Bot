@@ -8,6 +8,16 @@ python-multipart==0.0.32
 slowapi==0.1.9
 limits==5.8.0
 groq==1.7.0
+
+# H3 dispatch platform (ADR-001)
+h3==4.3.1
+motor==3.7.1
+minio==7.2.12
+kafka-python-ng==2.2.3
+scikit-learn==1.9.0
+lightgbm==4.7.0
+pandas==3.0.5
+pyarrow==25.0.1
 Pillow==13.0.0
 httpx==0.28.1
 pytest==9.1.1

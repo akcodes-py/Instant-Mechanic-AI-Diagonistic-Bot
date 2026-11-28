@@ -2,7 +2,7 @@
 
 Task: Real-World AI & API Security Hardening + OWASP 2026 Documentation.
 Baseline before any change: `103 passed, 1 skipped` (104 collected).
-Final: **`119 passed, 1 skipped`** (120 collected), 85% coverage.
+Final: **`136 passed, 1 skipped`** (137 collected), 85% coverage.
 
 | Phase | Scope | Status |
 |:--|:--|:--|
@@ -62,7 +62,7 @@ Final: **`119 passed, 1 skipped`** (120 collected), 85% coverage.
 ### Phase 4 — verification
 | Command | Result |
 |:--|:--|
-| `python -m pytest -q` | **119 passed, 1 skipped**, 85% coverage |
+| `python -m pytest -q` | **136 passed, 1 skipped**, 85% coverage |
 | `python -m bandit -r backend/app -ll -x backend/app/tests` | **No issues identified** — 0 Medium, 0 High, exit 0 |
 | `python -m pip_audit -r backend/requirements.txt --no-deps --disable-pip` | **No known vulnerabilities**, exit 0 |
 

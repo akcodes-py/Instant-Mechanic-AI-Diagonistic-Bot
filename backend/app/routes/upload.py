@@ -21,6 +21,7 @@ from app.security.image_sanitizer import (
 )
 from app.security.audit_logger import client_ip_from_request, log_security_event
 from app.security.middleware import api_rate_limit, limiter
+from app.services import mongo_store
 from app.services.media import VISION_IMAGE_EXTS, safe_filename, validate_upload
 # Kept as a monkeypatch target for the existing ML upload tests. Vision now
 # runs on sanitized in-memory bytes via preprocess_image_in_memory below.
@@ -303,6 +304,18 @@ async def upload(
         )
     )
     await db.commit()
+
+    # Best-effort metadata copy for the mechanic console (ADR-001). Raw bytes
+    # stay on local disk/S3; only keys and real detections are stored in MongoDB.
+    await mongo_store.store_upload(
+        session.id,
+        upload_row.file_path,
+        kind,
+        size_bytes,
+        bool(upload_row.analyzed),
+        detections,
+        reliable_labels,
+    )
 
     return JSONResponse(
         status_code=201,

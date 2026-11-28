@@ -171,7 +171,7 @@ Measured on this machine (Windows, Python 3.14.4) on 2026-11-28.
 
 | Check | Command | Result |
 |:--|:--|:--|
-| Full suite | `python -m pytest -q` | **119 passed, 1 skipped** (120 collected; skip = optional YOLO weights), 85% coverage |
+| Full suite | `python -m pytest -q` | **136 passed, 1 skipped** (137 collected; skip = optional YOLO weights), 85% coverage |
 | Original suite | `python -m pytest -q` (excluding the new file) | **103 passed, 1 skipped**, unchanged |
 | New security suite | `python -m pytest -q backend/app/tests/test_security_hardening.py` | **16 passed** |
 | SAST (CI gate) | `bandit -r backend/app -ll -x backend/app/tests` | **No issues identified** — 0 Medium, 0 High, exit 0 |

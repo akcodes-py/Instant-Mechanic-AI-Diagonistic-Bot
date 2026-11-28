@@ -11,12 +11,132 @@ services:
       DEBUG: "False"
       DATABASE_URL: sqlite+aiosqlite:////data/db.sqlite3
       MEDIA_ROOT: /data/media
+      REDPANDA_BROKERS: redpanda:9092
+      REDIS_URL: redis://redis:6379/0
+      MONGODB_URL: mongodb://mongo:27017
+      MINIO_ENDPOINT: minio:9000
     volumes:
       - sqlite-data:/data
+    depends_on:
+      - redpanda
+      - redis
+      - mongo
+      - minio
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/', timeout=4)"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+  dispatch:
+    build:
+      context: ./dispatch-service
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REDPANDA_BROKERS: redpanda:9092
+      AI_SERVICE_URL: http://backend:8000
+      ENABLE_ML_RANKING: "false"
+    depends_on:
+      - redis
+      - redpanda
+      - backend
+
+  # Kafka-compatible event bus (~250-500 MB). Host clients use localhost:9092;
+  # containers use redpanda:9092 (both are advertised).
+  redpanda:
+    image: redpandadata/redpanda:v24.2.29
+    command:
+      - redpanda
+      - start
+      - --smp 1
+      - --memory 512M
+      - --overprovisioned
+      - --node-id 0
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:9092
+    ports:
+      - "9092:19092"
+      - "9644:9644"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+      - ./contracts/db/mongodb.js:/docker-entrypoint-initdb.d/mongodb.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # Heavy production-shaped stores. Opt in only on machines with >8 GB RAM:
+  #   docker compose --profile heavy up
+  cassandra:
+    image: cassandra:5
+    profiles: ["heavy"]
+    environment:
+      MAX_MEMORY: 1G
+      CASSANDRA_CLUSTER_NAME: instant_mechanic
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+      - ./contracts/db/cassandra.cql:/docker-entrypoint-initdb.d/cassandra.cql:ro
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    profiles: ["heavy"]
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Dev@Passw0rd!"
+      MSSQL_PID: Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - mssql-data:/var/opt/mssql
+
 volumes:
   sqlite-data:
+  redpanda-data:
+  redis-data:
+  mongo-data:
+  minio-data:
+  cassandra-data:
+  mssql-data:

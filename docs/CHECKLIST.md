@@ -38,3 +38,15 @@ Pre-launch:
 18. ✅ Spam protection — honeypot `website` field + rate limiting; no fake CAPTCHA.
 19. ⏭️ Analytics — NOT added (no ID/consent basis); add privacy-conscious analytics only with config + consent. Documented, not faked.
 20. ✅ Clear CTA per view — Call/WhatsApp/Diagnose/Book on every screen incl. chatbot header.
+
+## H3 dispatch simulator - manual checks (ADR-001)
+
+- [ ] Open the Mechanic Console from the header; confirm H3 hex rings render and 6 synthetic mechanics appear.
+- [ ] Toggle a mechanic offline; after 60s it must disappear from supply (TTL).
+- [ ] Create a breakdown and dispatch; confirm an offer with ring and ETA appears (or ESCALATED + hotline).
+- [ ] Accept, then attempt a second accept: only one may win (atomic state transition).
+- [ ] Decline an offer and confirm the cascade continues to the next mechanic/ring.
+- [ ] Advance EN_ROUTE -> ARRIVED -> IN_REPAIR -> COMPLETED; illegal jumps must be rejected.
+- [ ] Confirm the emergency CTA always calls +91 6392077642.
+- [ ] This is a manual simulator audit, not an automated test or a live deployment.
+

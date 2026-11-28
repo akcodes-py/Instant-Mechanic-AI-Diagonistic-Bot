@@ -42,3 +42,34 @@ FastAPI + Uvicorn (AWS EC2, async SQLAlchemy + aiosqlite, media at MEDIA_ROOT)
 2. Groq chat used only for vague-but-car-related multi-word inputs with history (single follow-up question).
 3. Diagnosis: rule match → no AI; else optional local classifier when `ENABLE_ML_INFERENCE=True` → else Groq structured JSON (validated, normalized) → else safe generic fallback. Booking never needs AI.
 4. ML is off by default and every model load/inference failure returns a safe empty result. Uploads are analyzed only by a real configured model; audio/video are never transcribed. Unsafe-symptom handling and relevance decisions stay deterministic.
+
+## H3 dispatch platform (ADR-001) — additive, not a replacement
+
+The monolith above still works unchanged. A dispatch layer was added around it:
+
+```
+React /mechanic console (h3-js)  --telemetry every 5s / offers / job status-->  Kotlin Ktor :8081
+        |                                                                        |
+        |  WS /api/dispatch/ws/jobs/{id}                                         |  H3 Res-8 rings
+        v                                                                        v
+FastAPI :8000  --diagnosis.completed(Kafka)--> Redpanda --> Ktor    Redis: locks (15s) + supply (60s)
+  |  /rank/eta (sklearn/LightGBM or nearest fallback) ^            SQLite (local MS SQL stand-in)
+  |  MongoDB metadata (chat/messages, uploads+detections)          Cassandra / MS SQL (opt-in profiles)
+  v  S3 / MinIO media keys
+Parquet archive --> spark-jobs/hex_demand.py (PySpark or pandas fallback)
+```
+
+- **Contracts first:** `contracts/` holds the Kafka JSON schemas, DB DDL, Redis key
+  layout and H3 conventions. `booking_id` is the shared UUID.
+- **Clean Architecture:** `dispatch-service/src/main/kotlin/.../domain` has no
+  framework/DB imports; ports are `SpatialIndex`, `PresenceStore`, `OfferLockStore`,
+  `BookingRepository`, `RankingStrategy`, `EventPublisher`. 16 JUnit 5 tests run in
+  memory with fake ports (no Redis/Kafka/SQLite/H3 native lib).
+- **Sources of truth:** Redis hot sets = offer-time presence (Cassandra = audit);
+  atomic `UPDATE ... WHERE status IN ('SEARCHING','OFFERED')` = assignment; Redis
+  lock = mutual exclusion only. Empty k=1→2→3 cascade emits `ESCALATED` + hotline.
+- **Offline-safe:** `ENABLE_MONGO=False` and an unreachable broker leave chat →
+  diagnosis → booking and all safety overrides unchanged. `/rank/eta` reports
+  `model_used: false` when no model is mounted.
+- **Local vs production:** Compose runs Redpanda, Redis, MongoDB and MinIO by
+  default; `docker compose --profile heavy up` adds Cassandra and MS SQL.

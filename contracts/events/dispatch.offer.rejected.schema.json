@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://instantmechanic.online/contracts/events/dispatch.offer.rejected.schema.json",
+  "title": "DispatchOfferRejected",
+  "allOf": [{ "$ref": "common.schema.json" }],
+  "properties": {
+    "event_type": { "const": "dispatch.offer.rejected" },
+    "offer_id": { "type": "string", "format": "uuid" },
+    "mechanic_id": { "type": "string", "format": "uuid" },
+    "reason": { "type": "string", "enum": ["declined", "timeout", "lock_lost", "cancelled"] },
+    "rejected_at": { "type": "string", "format": "date-time" }
+  },
+  "required": ["event_type", "offer_id", "mechanic_id", "reason", "rejected_at"]
+}

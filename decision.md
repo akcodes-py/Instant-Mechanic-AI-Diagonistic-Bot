@@ -148,7 +148,7 @@ API in `backend/app/` and the React app in `src/`:
 
 ### 4.7 Verification and limits
 
-119 passed / 1 skipped; Bandit `-ll` 0 Medium/0 High; `pip-audit` clean. No
+136 passed / 1 skipped; Bandit `-ll` 0 Medium/0 High; `pip-audit` clean. No
 dependency changed. Manual Burp/Postman execution and CI Trivy remain
 outstanding — see `SECURITY_ASSESSMENT.md` §6–7. The in-memory limiter is per
 worker and resets on restart; TLS is terminated at the edge and the app sets

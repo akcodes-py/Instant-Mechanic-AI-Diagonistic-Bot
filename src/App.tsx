@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import Chatbot from './components/Chatbot';
+import MechanicConsole from './components/MechanicConsole';
 import { CookieBanner, Coverage, FinalCTA, Footer, Header, Hero, Membership, Pillars, RSAGrid, Steps, Trust, Legal, StickyBar, Page } from './components/Site';
 
 export default function App() {
@@ -10,6 +11,10 @@ export default function App() {
     setPage(p);
     window.scrollTo(0, 0);
   };
+
+  if (page === 'mechanic') {
+    return <MechanicConsole goHome={() => go('home')} />;
+  }
 
   if (page !== 'home') {
     return (

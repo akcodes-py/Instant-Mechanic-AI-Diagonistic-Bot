@@ -1,5 +1,17 @@
 # AGENTS.md — Instant Mechanic
 
+> **Current state (2026-11-22):** `docs/adr/ADR-001-h3-dispatch-platform.md` is the
+> explicit user-approved decision that supersedes this file's single-process scope
+> (no new DB/queue/framework, S3+CloudFront/EC2-only deployment). The additive H3
+> dispatch layer is now part of the repo: `contracts/`, `dispatch-service/`,
+> `spark-jobs/`, `.teamcity/`, `puppet/`, the `/mechanic` console, and new FastAPI
+> services (`spatial`, `ranker`, `event_bus`, `mongo_store`). The old rules below
+> still bind the **original** chat → diagnosis → booking flow and its safety,
+> honesty and secret-handling invariants. Measured gates: **136 pytest passed**,
+> **16 JUnit 5 passed** (`cd dispatch-service && ./gradlew test`), frontend
+> lint/typecheck/build clean (2 pre-existing warnings), `docker compose config --quiet`
+> OK. Still **not deployed**. Where a number below disagrees, use these measured ones.
+
 ## Repo state
 
 - AI car-mechanic chatbot plus marketing site for Delhi NCR: chat → diagnosis → booking, with roadside-help CTAs. Assignment/portfolio project, anonymous sessions (no auth, no stored PII).
@@ -12,13 +24,13 @@
   - `services/` — `triage.py`, `ai_service.py`, `media.py`, `session_store.py`, plus optional ML: `vision_service.py`, `nlp_service.py`, `preprocessing.py`, `calibration.py`, `onnx_service.py`.
   - `scripts/` — standalone `augment_nhtsa.py` (Groq Hinglish rewrite) and `create_calibration.py` (temperature scaling + conformal calibration).
   - `security/` — ShopAssist injection guard / policy router, output safety, image sanitizer, PII masker, structured audit logger and API hardening middleware.
-  - `tests/` — 119 pytest tests + 1 skip (API + AI-service + ML-service + security hardening/bias-slice + `test_security_hardening.py`).
+  - `tests/` — 136 pytest tests + 1 skip (API + AI-service + ML-service + security hardening/bias-slice + `test_security_hardening.py`).
 - **Docs:** `README.md` (entry point), `docs/API.md` (endpoint contract), `docs/ARCHITECTURE.md` (layers), `docs/DEPLOYMENT.md` (AWS path), `docs/CHECKLIST.md` (manual website audit), `SECURITY_ASSESSMENT.md` (threat model, OWASP LLM 2026 mapping, VAPT log), `docs/BURP_SUITE_CHECKLIST.md` (manual Burp runbook), `docs/instant_mechanic.postman_collection.json` (Postman v2.1). `Full_Stack_Developer_Intern_Task (3).pdf` is the assignment brief — keep it.
 - **Infra:** `Dockerfile.backend`, `Dockerfile.frontend`, `docker-compose.yml`, `.github/workflows/ci.yml`. `ec2-nginx.conf` is an untracked nginx sample for EC2.
 - **Git:** `main` tracks `origin` (GitHub). The FastAPI migration commit is `9740073`; the optional ML build is uncommitted at the time of writing. `fastapi_migration_plan.md`, `pln.md`, `ec2-nginx.conf`, and this file are untracked.
 - **The DRF → FastAPI migration is complete.** The old `backend_django/` reference tree was removed after the new suite passed; it remains in git history. `fastapi_migration_plan.md` is historical — do not re-run it or reintroduce Django/DRF. `pln.md` is the implemented optional-ML plan; treat it as historical once this change lands.
 - **No live deployment is verified.** README says "Not deployed yet"; `docs/DEPLOYMENT.md` is a guide. Never claim a URL, uptime, or smoke result that was not actually tested.
-- **Measured state (2026-11-28, Python 3.14.4):** `119 passed, 1 skipped` in ~25 s, total coverage **85%** (the skip is the optional dashboard-weights integration test; no weights are present). Baseline was `103 passed, 1 skipped`. Frontend files were untouched in the 2026-11-28 change; frontend gates were not re-run locally because `node_modules` is absent (historical baseline: typecheck/build clean, lint 0 errors / 2 warnings).
+- **Measured state (2026-11-28, Python 3.14.4):** `136 passed, 1 skipped` in ~25 s, total coverage **85%** (the skip is the optional dashboard-weights integration test; no weights are present). Baseline was `103 passed, 1 skipped`. Frontend files were untouched in the 2026-11-28 change; frontend gates were not re-run locally because `node_modules` is absent (historical baseline: typecheck/build clean, lint 0 errors / 2 warnings).
 - **Hygiene:** root `.coverage`, `backend/.coverage`, and old `backend/**/__pycache__` files were tracked historically. This migration removes them, and `.gitignore` now ignores Python/test artifacts. Do not re-add generated files.
 
 ## Source-of-truth rules
@@ -159,14 +171,14 @@ PowerShell note: prefer script files over inline `python -c` when the snippet co
 
 Fast loop for every change:
 
-1. `python -m pytest -q` — must stay **119 passed, 1 skipped** (the skip is the optional weights integration test when `backend/models/dashboard_lights.pt` is absent).
+1. `python -m pytest -q` — must stay **136 passed, 1 skipped** (the skip is the optional weights integration test when `backend/models/dashboard_lights.pt` is absent).
 2. Startup smoke: `cd backend`, run Uvicorn, hit `/api/health/`, then chat → diagnosis → booking → history.
 3. `npm run typecheck` and `npm run build` — clean.
 4. `npm run lint` — currently 0 errors / 2 warnings; do not add warnings.
 5. Manual smoke for the changed path: valid and invalid upload; 400/404/422/429/503/504; confirm errors do not leak secrets. For ML changes, verify `ENABLE_ML_INFERENCE=False` still behaves identically and that missing/bad model paths fall back.
 6. Script smoke: `python backend/scripts/augment_nhtsa.py --help`, `python backend/scripts/create_calibration.py --help`, `python backend/scripts/eval_vision_robustness.py`, `python backend/scripts/eval_security_benchmark.py`. Robustness and benchmark scripts print honest "skipped/not_run" states without weights; never invent numbers. Measured security figures live in `MODEL_CARD.md`.
 
-Current measured baseline (2026-11-28): 119 passed, 1 skipped, 85% total coverage, ~25 s. The skip is the optional `backend/models/dashboard_lights.pt` integration test because no weights are present. Bandit (`-ll`, tests excluded) reports 0 Medium / 0 High; `pip-audit` on pinned deps reports no known vulnerabilities (torch/torchvision CPU wheels are skipped). A TestClient smoke returned health 200, chat `greet`, booking 201. The earlier ML-pinned Docker image built successfully with ultralytics 8.3.155 and runtime imports (`torch`, `torchvision`, `transformers`, `ultralytics`, `albumentations`, `cv2`, `onnxruntime`, `scipy`) passed; `requirements.txt` pins ultralytics 8.4.183, torch 2.10.0+cpu, torchvision 0.25.0+cpu, Pillow 13.0.0 and transformers 5.14.1. Actual model inference was not exercised because no weights are included. Local Python 3.14 vs CI 3.12 is expected.
+Current measured baseline (2026-11-28): 136 passed, 1 skipped, 85% total coverage, ~25 s. The skip is the optional `backend/models/dashboard_lights.pt` integration test because no weights are present. Bandit (`-ll`, tests excluded) reports 0 Medium / 0 High; `pip-audit` on pinned deps reports no known vulnerabilities (torch/torchvision CPU wheels are skipped). A TestClient smoke returned health 200, chat `greet`, booking 201. The earlier ML-pinned Docker image built successfully with ultralytics 8.3.155 and runtime imports (`torch`, `torchvision`, `transformers`, `ultralytics`, `albumentations`, `cv2`, `onnxruntime`, `scipy`) passed; `requirements.txt` pins ultralytics 8.4.183, torch 2.10.0+cpu, torchvision 0.25.0+cpu, Pillow 13.0.0 and transformers 5.14.1. Actual model inference was not exercised because no weights are included. Local Python 3.14 vs CI 3.12 is expected.
 
 CI runs the backend install → pytest → Docker build, a security job (Bandit `-ll`, pip-audit on pinned deps, Trivy CRITICAL/HIGH), and frontend install → lint → typecheck → build. A deployment counts only after the live host passes `/api/health/` and the full chat/diagnosis/booking/upload flow with CORS and HTTPS checked. Record the result; otherwise say "not deployed".
 
