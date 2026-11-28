@@ -2,7 +2,7 @@
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +13,12 @@ from app.database import get_db
 from app.models import ChatMessage, Diagnosis
 from app.routes.common import error_response
 from app.schemas import DiagnosisRequest, diagnosis_out
+from app.security.middleware import api_rate_limit, limiter
+from app.security.output_safety import (
+    apply_output_guard,
+    hazards_from_context,
+    hazards_from_text,
+)
 from app.services import ai_service
 from app.services.calibration import (
     ConformalPredictor,
@@ -91,12 +97,8 @@ def _ml_diagnosis(ml_result: dict, history: str) -> dict | None:
     }
 
 
-def _ml_diagnosis_from_calibration(ml_result: dict, history: str) -> dict | None:
-    """Use conformal prediction when calibration exists; otherwise use 0.7 gate."""
-    payload = _ml_diagnosis(ml_result, history)
-    if payload is None:
-        return None
-
+def _conformal_result(ml_result: dict) -> dict | None:
+    """Build the MAPIE-style conformal set purely from calibrated scores."""
     predictions = ml_result.get("predictions") or []
     labels = [
         str(item.get("label", "")).strip()
@@ -117,9 +119,6 @@ def _ml_diagnosis_from_calibration(ml_result: dict, history: str) -> dict | None
         )
     params = load_calibration_params(calibration_path) if calibration_path else None
     if params is None:
-        # No calibration file: only trust a high-confidence ML match.
-        if float(ml_result.get("confidence", 0.0)) > 0.7:
-            return payload
         return None
 
     temperature, q_hat, alpha = params
@@ -131,14 +130,58 @@ def _ml_diagnosis_from_calibration(ml_result: dict, history: str) -> dict | None
     scaled_scores = TemperatureScaler(temperature).scale(scores)
     predictor = ConformalPredictor(alpha=alpha)
     predictor.q_hat = q_hat
-    prediction_set = predictor.predict_set(scaled_scores, labels)
+    return predictor.predict_set(scaled_scores, labels)
+
+
+def _hitl_diagnosis(history: str) -> dict:
+    """Structured follow-up when conformal prediction is too uncertain."""
+    return {
+        "summary": (
+            "The symptom match is uncertain. Answer a couple of questions before "
+            "a remote assessment is issued."
+        ),
+        "possible_causes": ["Uncertain — inspection required to narrow down"],
+        "supporting_symptoms": [history[:300]],
+        "recommended_service": "inspection",
+        "next_steps": [
+            "Confirm the warning-light colour and when the symptom started",
+            "Share the vehicle make, model, year and fuel type",
+            "Book an in-person inspection or call +91 6392077642",
+        ],
+        "urgency": "medium",
+        "drive_guidance": (
+            "If a red warning light, smoke, or unusual handling appears, stop "
+            "safely and do not continue driving."
+        ),
+        "safety_warning": (
+            "Calibrated prediction was uncertain; no automated diagnosis was issued."
+        ),
+        "inspection_recommended": True,
+    }
+
+
+def _ml_diagnosis_from_calibration(ml_result: dict, history: str) -> dict | None:
+    """Use conformal prediction when calibration exists; otherwise use 0.7 gate."""
+    payload = _ml_diagnosis(ml_result, history)
+    if payload is None:
+        return None
+
+    prediction_set = _conformal_result(ml_result)
+    if prediction_set is None:
+        # No calibration file: only trust a high-confidence ML match.
+        if float(ml_result.get("confidence", 0.0)) > 0.7:
+            return payload
+        return None
+
     routed, _ = route_prediction(prediction_set, payload, history)
     return routed
 
 
 @router.post("/diagnosis/")
+@limiter.limit(api_rate_limit)
 async def diagnosis(
     payload: DiagnosisRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     if payload.website:
@@ -189,7 +232,15 @@ async def diagnosis(
         # 2) Optional ML classifier, only when enabled and a model exists.
         try:
             ml_result = await run_in_threadpool(classify_symptoms, history[:512])
+            prediction_set = _conformal_result(ml_result)
             diagnosis_payload = _ml_diagnosis_from_calibration(ml_result, history)
+            if (
+                diagnosis_payload is None
+                and prediction_set is not None
+                and int(prediction_set.get("set_size", 0)) > 2
+            ):
+                # Wide MAPIE set: deterministic HITL questions, zero LLM tokens.
+                diagnosis_payload = _hitl_diagnosis(history)
         except Exception:
             logger.warning("ML diagnosis failed; using fallback", exc_info=False)
 
@@ -242,7 +293,7 @@ async def diagnosis(
         }
         ai_used = False
 
-    # Conservative safety override.
+    # Conservative safety override (kept for existing free-text patterns).
     if is_unsafe(history):
         diagnosis_payload["urgency"] = "critical"
         diagnosis_payload["drive_guidance"] = (
@@ -253,6 +304,13 @@ async def diagnosis(
             diagnosis_payload["safety_warning"] = (
                 "Potential safety-critical fault. Keep clear and seek qualified help."
             )
+
+    # Ported output guard: critical hazards override drive advice, unsafe
+    # "keep driving"/sensor-bypass phrasing is removed, and hidden context is
+    # redacted. This runs after rules, ML and Groq and cannot be bypassed.
+    hazards = hazards_from_text(history) | hazards_from_context(history)
+    guarded = apply_output_guard(diagnosis_payload, hazards=hazards)
+    diagnosis_payload = guarded.payload
 
     recommended_service = diagnosis_payload.get("recommended_service", "general_repair")
     if recommended_service not in SERVICE_TYPES:
