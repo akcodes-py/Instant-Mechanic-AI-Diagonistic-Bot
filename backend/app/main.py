@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import init_db
 from app.routes import booking, chat, diagnosis, health, history, upload
+from app.security.middleware import install_security
 
 
 @asynccontextmanager
@@ -46,3 +47,6 @@ app.include_router(upload.router, prefix="/api")
 app.include_router(diagnosis.router, prefix="/api")
 app.include_router(booking.router, prefix="/api")
 app.include_router(history.router, prefix="/api")
+
+# Rate-limit handler, hardening headers and PII-safe logs.
+install_security(app)

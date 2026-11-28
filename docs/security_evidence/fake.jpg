@@ -1,0 +1,4 @@
+This file is intentionally NOT an image.
+It is plain text saved with a .jpg extension and is used to prove that the
+upload endpoint validates magic bytes instead of trusting the file extension.
+Expected result: HTTP 400 "File content does not look like a valid image."

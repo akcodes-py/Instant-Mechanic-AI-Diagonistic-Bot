@@ -73,13 +73,50 @@ python backend/scripts/augment_nhtsa.py complaints.csv -o augmented.csv
 python backend/scripts/create_calibration.py labelled.csv -o calibration.json
 ```
 
+## Security controls (stateless by design)
+
+Full rationale, threat model and VAPT log: **`SECURITY_ASSESSMENT.md`**.
+ML limits and uncertainty behaviour: **`MODEL_CARD.md`**.
+
+There are **no accounts, no JWTs and no encrypted-at-rest PII store**. Data is
+protected by not retaining it: PII is masked in memory before Groq, image
+metadata is destroyed before inference, and only sanitized bytes are stored.
+
+| Control | Where | What it does |
+|:--|:--|:--|
+| Upload hardening | `security/image_sanitizer.py`, `services/media.py` | 5 MB cap, magic-byte JPEG/PNG/WebP validation, spoofed extension → `400`/`415` |
+| EXIF/GPS stripping | `security/image_sanitizer.py` | Pillow in-memory re-encode drops EXIF/GPS/IPTC/XMP before YOLO11n/CLIP and before disk |
+| Pre-LLM PII masking | `security/pii_masker.py`, `services/ai_service.py` | `[EMAIL_REDACTED]` / `[PHONE_REDACTED]` / `[VIN_REDACTED]` at the only provider boundary |
+| Output sanitisation | `security/pii_masker.py`, `output_safety.py` | Strips scripts/HTML/`javascript:`; forces stop-and-tow for critical hazards |
+| Security headers | `middleware/security_headers.py` | HSTS, `nosniff`, `DENY`, CSP `default-src 'self'`, `no-referrer` on every response |
+| Rate limiting | `security/middleware.py` | slowapi on chat/diagnosis/upload → `429` + `Retry-After` |
+| Structured audit log | `security/audit_logger.py` | JSON `PROMPT_INJECTION_BLOCKED`, `INVALID_UPLOAD`, `RATE_LIMIT_EXCEEDED`; PII-redacted |
+| Prompt-injection guard | `security/injection_guard.py`, `policy_router.py` | Two deterministic layers, bounded context, MAPIE HITL for uncertain forecasts |
+
+`SECURITY_AUDIT_LOG` (empty = stdout only) optionally writes those JSON events to
+a file. No `ENCRYPTION_KEY` or `JWT_SECRET_KEY` exists — there is no key to
+rotate because there is no stored PII.
+
+### Manual VAPT assets
+
+- `docs/instant_mechanic.postman_collection.json` — Postman v2.1, 5 folders /
+  14 requests (happy path, prompt injection, PII masking, malicious uploads, rate limits).
+- `docs/BURP_SUITE_CHECKLIST.md` — short Burp proxy guide with 4 screenshots in
+  `docs/security_evidence/`.
+
 ## Test coverage
 ```bash
 cd instant-mechanic
 python -m pytest -q
-# 71 passed, 1 skipped (optional weights integration), ~81% coverage; all Groq calls mocked, no model files required
+# 119 passed, 1 skipped (optional weights integration), 85% coverage; all Groq calls mocked, no model files required
 ```
-No live AI calls in tests — every provider interaction is patched. ML tests use empty paths/missing files, so they exercise the safe fallbacks without downloading models.
+No live AI calls in tests — every provider interaction is patched. ML tests use empty paths/missing files, so they exercise the safe fallbacks without downloading models. The security suite is `backend/app/tests/test_security_hardening.py` (16 tests: uploads, EXIF, masking, headers, injection, rate limits).
+
+Local benchmark / robustness scripts:
+```bash
+python backend/scripts/eval_vision_robustness.py --out reports/vision_robustness.json
+python backend/scripts/eval_security_benchmark.py --pytest-count 119 --vision-report reports/vision_robustness.json
+```
 
 ## Evaluation mapping
 Code quality (typed frontend, layered FastAPI backend), API design (Pydantic schemas, status codes, validation), UX (mobile-first, emergency CTAs always visible), error handling (useful messages, no stack leaks), deployment (S3 + CloudFront + AWS docs), DB design (FK sessions/messages/uploads/diagnoses/bookings, UUIDs, indexes), minimal AI usage (rules first, Groq only when useful).

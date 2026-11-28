@@ -9,10 +9,14 @@ from app.database import get_db
 from app.models import ChatMessage, ChatSession
 from app.routes.common import error_response
 from app.schemas import ChatRequest
+from app.security.middleware import api_rate_limit, limiter
+from app.security.audit_logger import client_ip_from_request, log_security_event
+from app.security.injection_guard import injection_blocked
+from app.security.policy_router import Route, build_bounded_context, route as decide_route
 from app.services import ai_service
 from app.services.session_store import (
     get_session,
-    history_text,
+    history_messages,
     message_count,
     rate_limited,
 )
@@ -29,18 +33,30 @@ router = APIRouter()
 
 
 @router.post("/chat/")
+@limiter.limit(api_rate_limit)
 async def chat(
     payload: ChatRequest,
-    http_request: Request,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     if payload.website:
         return error_response(400, "Request rejected.")
 
     message = payload.message or ""
-    rate_key = str(payload.session_id or (http_request.client.host if http_request.client else "anon"))
+    rate_key = str(payload.session_id or (request.client.host if request.client else "anon"))
     if rate_limited(rate_key):
         return error_response(429, "Too many requests. Please wait a minute.")
+
+    # Prompt-injection attempts are logged for VAPT evidence. The deterministic
+    # reply still runs; the guard simply prevents the payload reaching Groq.
+    if injection_blocked(message):
+        log_security_event(
+            "PROMPT_INJECTION_BLOCKED",
+            client_ip=client_ip_from_request(request),
+            endpoint="/api/chat/",
+            status=200,
+            detail="injection_guard_layer2",
+        )
 
     session = await get_session(db, payload.session_id)
     if session is None:
@@ -104,16 +120,33 @@ async def chat(
         )
         if use_ai:
             try:
-                history = await history_text(db, session, limit=8)
-                prompt = (
-                    f"History:\n{history}\n\nLatest user message: {message}\n"
-                    "Ask ONE short follow-up question as a senior mechanic."
+                # Ported ShopAssist gate: sanitize every turn, bound the window,
+                # and only spend tokens when the router sees genuine ambiguity.
+                prior = await history_messages(db, session, limit=8)
+                routing = decide_route(
+                    message,
+                    history=prior,
+                    vehicle={
+                        "make": session.vehicle_make,
+                        "model": session.vehicle_model,
+                        "year": session.vehicle_year,
+                        "fuel": session.vehicle_fuel,
+                    },
                 )
-                ai_reply = await run_in_threadpool(
-                    ai_service.groq_chat,
-                    [{"role": "user", "content": prompt}],
-                    max_tokens=200,
-                )
+                use_ai = routing.route is Route.LLM
+                if use_ai:
+                    bounded = build_bounded_context(prior, message)
+                    prompt = (
+                        f"History (sanitized, bounded):\n{bounded.text}\n"
+                        "Ask ONE short follow-up question as a senior mechanic."
+                    )
+                    ai_reply = await run_in_threadpool(
+                        ai_service.groq_chat,
+                        [{"role": "user", "content": prompt}],
+                        max_tokens=min(200, routing.max_tokens),
+                    )
+                else:
+                    ai_reply = ""
                 if ai_reply:
                     reply = ai_reply
                     ai_used = True

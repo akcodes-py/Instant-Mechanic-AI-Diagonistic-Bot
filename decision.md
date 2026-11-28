@@ -60,12 +60,13 @@ This document outlines **what** technologies, patterns, and tools are used acros
      - If the prediction set has **$>2$ labels** $\rightarrow$ High uncertainty; automatically escalate the query to the Groq LLM for deeper conversational diagnosis.
 
 ### 2.5 Security, Privacy & Sessions
-* **Context:** Drivers on the roadside need instant help and will abandon tools requiring account registration.
-* **The Decision:** Anonymous UUID sessions stored in local storage (`im-session`).
+* **Context:** Drivers on the roadside need instant help and will abandon tools requiring account registration. Photos carry GPS/device metadata and symptom text carries phone numbers and VINs.
+* **The Decision:** Anonymous UUID sessions stored in local storage (`im-session`). **No account system, no stored PII, no encryption-at-rest** (confirmed again in section 4).
 * **Why:**
   1. **Frictionless Onboarding:** Instant roadside assistance without passwords, emails, or OAuth flows.
   2. **Upload Safety:** All uploaded files are validated via magic bytes and Pillow image headers, saved with random UUID filenames, and placed outside the web server's publicly browsable paths.
   3. **Isolated History:** Session IDs isolate user diagnostics, chat history, and bookings.
+  4. **Data Minimization:** The safest PII is PII never stored — masking in memory and stripping metadata remove the data before it can leak from a backup or log.
 
 ---
 
@@ -75,3 +76,80 @@ This document outlines **what** technologies, patterns, and tools are used acros
 2. **ML inference remains optional:** `ENABLE_ML_INFERENCE=False` ensures the entire application runs deterministically even without model weights installed.
 3. **Additive APIs:** Any new data surfaced by vision or NLP is exposed via additive keys (`vision`, `detections`, `reliable_labels`), ensuring zero breaking changes to existing frontend clients.
 
+---
+
+## 4. Stateless Security Hardening ADR (2026-11-28)
+
+Scope: input/upload hardening, EXIF stripping, in-memory PII masking, output
+sanitisation, security headers, rate limiting and structured audit logging.
+ML weights, training scripts, YOLO11n/DeBERTa/MAPIE inference and non-root
+Docker hardening were **not** modified.
+
+### 4.1 Data minimization beats encryption-at-rest
+
+A user table plus AES-encrypted PII columns was rejected. It adds key
+management, a decryption fan-out on every read, backup exposure and an
+authorization matrix — while still retaining the data. Instead the API is
+stateless: `ChatSession` is an anonymous UUID capability, there are no
+`users`/`diagnostic_records` tables, and the only durable PII is the booking
+phone needed to dispatch a mechanic (never sent to Groq, never logged).
+
+**Consequence:** losing a session ID loses the history; there is no identity
+and no key to rotate. This is intentional for a roadside prototype and is
+documented as such in `SECURITY_ASSESSMENT.md`.
+
+### 4.2 EXIF/GPS destroyed before inference or disk
+
+`security/image_sanitizer.py` checks magic bytes (never client MIME), enforces
+5 MB, then decodes and re-encodes through Pillow into `BytesIO` with no `exif`
+or `encoderinfo`. The clean bytes are what reach YOLO11n/CLIP helpers and what
+get written under `MEDIA_ROOT` with a UUID filename. A test builds a JPEG with a
+real GPS IFD and proves both the sanitized bytes and the stored file have no
+GPS/orientation tags.
+
+### 4.3 PII masking at the only provider boundary
+
+`mask_pii` / `mask_messages` live inside `services/ai_service.py`, the only
+module importing the Groq SDK. Both the free-form and structured calls mask
+phone/email/VIN before egress; the system prompt keeps the public emergency
+number because it is not user PII. Ordering is email → VIN → phone so a
+17-character VIN is not partially consumed by the phone rule. `sanitize_llm_output`
+runs on replies and on every parsed diagnosis field (LLM10).
+
+### 4.4 Headers, limits and audit events
+
+`app/middleware/security_headers.py` owns the five required headers plus COOP/
+CORP. `security/middleware.py` keeps slowapi at 10/min with `429` + `Retry-After`
+and emits `RATE_LIMIT_EXCEEDED`. `security/audit_logger.py` emits exactly three
+stateless events — `PROMPT_INJECTION_BLOCKED`, `INVALID_UPLOAD` and
+`RATE_LIMIT_EXCEEDED` — as JSON lines containing only metadata. Every field is
+redacted, so raw image bytes, keys and unmasked PII cannot be logged even if a
+caller tries.
+
+### 4.5 MAPIE HITL as an LLM07/LLM09 governance control
+
+The conformal gate is kept out of the prompt path: wide prediction sets (>2
+labels) return a human-in-the-loop "inspection" result with `ai_used: false` and
+zero LLM tokens. Deterministic hazard overrides run last and cannot be bypassed
+by ML or Groq. No calibration or hidden context is ever included in a prompt.
+
+### 4.6 Path mapping (brief → repository)
+
+The brief uses a generic `src/` + `tests/` layout. This repository keeps the
+API in `backend/app/` and the React app in `src/`:
+
+| Requested | Implemented |
+|:--|:--|
+| `src/security/image_sanitizer.py` | `backend/app/security/image_sanitizer.py` (pre-existing, retained) |
+| `src/security/pii_masker.py` | `backend/app/security/pii_masker.py` |
+| `src/security/audit_logger.py` | `backend/app/security/audit_logger.py` |
+| `src/middleware/security_headers.py` | `backend/app/middleware/security_headers.py` |
+| `tests/test_security_hardening.py` | `backend/app/tests/test_security_hardening.py` |
+
+### 4.7 Verification and limits
+
+119 passed / 1 skipped; Bandit `-ll` 0 Medium/0 High; `pip-audit` clean. No
+dependency changed. Manual Burp/Postman execution and CI Trivy remain
+outstanding — see `SECURITY_ASSESSMENT.md` §6–7. The in-memory limiter is per
+worker and resets on restart; TLS is terminated at the edge and the app sets
+HSTS without redirecting.

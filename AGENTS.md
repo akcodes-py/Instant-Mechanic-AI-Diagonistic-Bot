@@ -2,21 +2,23 @@
 
 ## Repo state
 
-- AI car-mechanic chatbot plus marketing site for Delhi NCR: chat → diagnosis → booking, with roadside-help CTAs. Assignment/portfolio project, anonymous sessions (no auth).
+- AI car-mechanic chatbot plus marketing site for Delhi NCR: chat → diagnosis → booking, with roadside-help CTAs. Assignment/portfolio project, anonymous sessions (no auth, no stored PII).
 - **Frontend:** `src/` — React 19 + Vite 8 + TypeScript 7 + Tailwind 4. State-driven SPA (`App.tsx` switches pages); no router. Typed API client in `src/api.ts`.
 - **Backend:** `backend/` — FastAPI 0.139 + Uvicorn, async SQLAlchemy 2.0 + aiosqlite, SQLite, Pydantic v2. App code in `backend/app/`:
-  - `main.py` — app, CORS, lifespan (tables + media dir), routers.
+  - `main.py` — app, CORS, lifespan (tables + media dir), routers, security install.
   - `routes/` — `health.py`, `chat.py`, `upload.py`, `diagnosis.py`, `booking.py`, `history.py`.
   - `models.py`, `schemas.py`, `database.py`, `config.py`, `constants.py`.
+  - `middleware/` — `security_headers.py` (HSTS, nosniff, DENY, CSP, no-referrer, COOP/CORP).
   - `services/` — `triage.py`, `ai_service.py`, `media.py`, `session_store.py`, plus optional ML: `vision_service.py`, `nlp_service.py`, `preprocessing.py`, `calibration.py`, `onnx_service.py`.
   - `scripts/` — standalone `augment_nhtsa.py` (Groq Hinglish rewrite) and `create_calibration.py` (temperature scaling + conformal calibration).
-  - `tests/` — 56 pytest tests (36 API + 6 AI service + 14 ML service).
-- **Docs:** `README.md` (entry point), `docs/API.md` (endpoint contract), `docs/ARCHITECTURE.md` (layers), `docs/DEPLOYMENT.md` (AWS path), `docs/CHECKLIST.md` (manual website audit). `Full_Stack_Developer_Intern_Task (3).pdf` is the assignment brief — keep it.
+  - `security/` — ShopAssist injection guard / policy router, output safety, image sanitizer, PII masker, structured audit logger and API hardening middleware.
+  - `tests/` — 119 pytest tests + 1 skip (API + AI-service + ML-service + security hardening/bias-slice + `test_security_hardening.py`).
+- **Docs:** `README.md` (entry point), `docs/API.md` (endpoint contract), `docs/ARCHITECTURE.md` (layers), `docs/DEPLOYMENT.md` (AWS path), `docs/CHECKLIST.md` (manual website audit), `SECURITY_ASSESSMENT.md` (threat model, OWASP LLM 2026 mapping, VAPT log), `docs/BURP_SUITE_CHECKLIST.md` (manual Burp runbook), `docs/instant_mechanic.postman_collection.json` (Postman v2.1). `Full_Stack_Developer_Intern_Task (3).pdf` is the assignment brief — keep it.
 - **Infra:** `Dockerfile.backend`, `Dockerfile.frontend`, `docker-compose.yml`, `.github/workflows/ci.yml`. `ec2-nginx.conf` is an untracked nginx sample for EC2.
 - **Git:** `main` tracks `origin` (GitHub). The FastAPI migration commit is `9740073`; the optional ML build is uncommitted at the time of writing. `fastapi_migration_plan.md`, `pln.md`, `ec2-nginx.conf`, and this file are untracked.
 - **The DRF → FastAPI migration is complete.** The old `backend_django/` reference tree was removed after the new suite passed; it remains in git history. `fastapi_migration_plan.md` is historical — do not re-run it or reintroduce Django/DRF. `pln.md` is the implemented optional-ML plan; treat it as historical once this change lands.
 - **No live deployment is verified.** README says "Not deployed yet"; `docs/DEPLOYMENT.md` is a guide. Never claim a URL, uptime, or smoke result that was not actually tested.
-- **Measured state (2026-10-21, Python 3.14.4):** `71 passed, 1 skipped` in ~12 s, total coverage **81%** (the skip is the optional dashboard-weights integration test; no weights are present). Frontend `npm run typecheck` and `npm run build` pass (~262 kB JS / 79 kB gzip); `npm run lint` exits 0 with two `react(set-state-in-effect)` warnings at `src/components/Site.tsx:323` and `src/components/Chatbot.tsx:45`.
+- **Measured state (2026-11-28, Python 3.14.4):** `119 passed, 1 skipped` in ~25 s, total coverage **85%** (the skip is the optional dashboard-weights integration test; no weights are present). Baseline was `103 passed, 1 skipped`. Frontend files were untouched in the 2026-11-28 change; frontend gates were not re-run locally because `node_modules` is absent (historical baseline: typecheck/build clean, lint 0 errors / 2 warnings).
 - **Hygiene:** root `.coverage`, `backend/.coverage`, and old `backend/**/__pycache__` files were tracked historically. This migration removes them, and `.gitignore` now ignores Python/test artifacts. Do not re-add generated files.
 
 ## Source-of-truth rules
@@ -67,12 +69,14 @@
 
 ### Data and security invariants
 
-- Anonymous UUID sessions: the session ID is the only capability. No auth layer exists.
+- Anonymous UUID sessions: the session ID is the only capability. No auth layer exists and no account table is wanted — see `SECURITY_ASSESSMENT.md` for the data-minimization rationale.
 - Session isolation is enforced on history, diagnosis linking, and booking lookup **when `session_id` is supplied**. `GET /api/booking/<id>/` without `session_id` returns the booking — a prototype privacy gap; do not describe it as secure.
+- Do not add a user database, JWT layer or encryption-at-rest for PII. Mask PII in memory inside `ai_service` and strip EXIF/GPS before inference or storage. `bookings.phone` is the only durable PII (needed to dispatch a mechanic); never send it to Groq or log it.
+- No secret is hardcoded: `GROQ_API_KEY` comes from env, is server-side only, and is never logged.
 - SQLite (`DATABASE_URL`) and local media (`MEDIA_ROOT`); Compose mounts `/data`. Single instance only: no queue, background jobs, or horizontal scaling.
 - CORS uses `CORS_ORIGINS` (fallback `CORS_ALLOWED_ORIGINS`); `CORS_ALLOW_ALL` is for local debugging only.
-- The app does **not** enforce HTTPS/HSTS itself. TLS is expected at CloudFront/Nginx; do not add a redirect loop behind plain HTTP.
-- Uploaded files are untrusted input: keep extension/magic/size checks and UUID names. Never execute, transcribe, or “analyze” media without a real model and an evaluation.
+- The app does **not** redirect to HTTPS; TLS is terminated at CloudFront/Nginx. It does set the HSTS header on every response (`app/middleware/security_headers.py`); do not add a redirect loop behind plain HTTP.
+- Uploaded files are untrusted input: keep extension/magic/size checks (5 MB, JPEG/PNG/WebP) and UUID names, and keep the in-memory Pillow re-encode that strips EXIF/GPS before inference or disk. Never execute, transcribe, or “analyze” media without a real model and an evaluation.
 
 ## AI rules (Groq)
 
@@ -118,8 +122,11 @@
 | `GROQ_API_KEY` | empty | server-side only; empty = deterministic mode |
 | `GROQ_MODEL` | `llama-3.3-70b-versatile` | |
 | `GROQ_TIMEOUT_S` | `20` | |
-| `MAX_IMAGE_MB` / `MAX_AUDIO_MB` / `MAX_VIDEO_MB` | `10` / `15` / `50` | upload limits |
+| `MAX_IMAGE_MB` / `MAX_AUDIO_MB` / `MAX_VIDEO_MB` | `10` / `15` / `50` | legacy upload limits; images are additionally capped at `MAX_VISION_IMAGE_MB=5` and re-encoded in memory |
 | `CHAT_RATELIMIT_PER_MIN` | `30` | in-memory limiter |
+| `API_RATE_LIMIT_PER_MIN` | `10` | slowapi limit on chat/diagnosis/upload; 429 + `Retry-After` |
+| `SECURITY_AUDIT_LOG` | empty | optional JSON-lines file sink for security events (empty = stdout only) |
+| `MAX_GUARD_HISTORY_MESSAGES` / `MAX_GUARD_CONTEXT_CHARS` / `MAX_GUARD_CONTEXT_TOKENS` / `MAX_LLM_TOKENS` | `6` / `1200` / `600` / `400` | bounded prompt budgets |
 | `ENABLE_ML_INFERENCE` | `False` | optional vision/NLP inference; off keeps deterministic mode |
 | `VISION_MODEL_PATH` | empty | Ultralytics YOLO warning-light model; empty/unreadable = unavailable |
 | `VISION_CONF` / `VISION_IMGSZ` | `0.25` / `960` | YOLO confidence and input size (`iou=0.5` fixed) |
@@ -152,20 +159,20 @@ PowerShell note: prefer script files over inline `python -c` when the snippet co
 
 Fast loop for every change:
 
-1. `python -m pytest -q` — must stay **71 passed, 1 skipped** (44 API + 6 AI-service + 21 ML-service; the skip is the optional weights integration test when `backend/models/dashboard_lights.pt` is absent).
+1. `python -m pytest -q` — must stay **119 passed, 1 skipped** (the skip is the optional weights integration test when `backend/models/dashboard_lights.pt` is absent).
 2. Startup smoke: `cd backend`, run Uvicorn, hit `/api/health/`, then chat → diagnosis → booking → history.
 3. `npm run typecheck` and `npm run build` — clean.
 4. `npm run lint` — currently 0 errors / 2 warnings; do not add warnings.
 5. Manual smoke for the changed path: valid and invalid upload; 400/404/422/429/503/504; confirm errors do not leak secrets. For ML changes, verify `ENABLE_ML_INFERENCE=False` still behaves identically and that missing/bad model paths fall back.
-6. Script smoke: `python backend/scripts/augment_nhtsa.py --help`, `python backend/scripts/create_calibration.py --help`.
+6. Script smoke: `python backend/scripts/augment_nhtsa.py --help`, `python backend/scripts/create_calibration.py --help`, `python backend/scripts/eval_vision_robustness.py`, `python backend/scripts/eval_security_benchmark.py`. Robustness and benchmark scripts print honest "skipped/not_run" states without weights; never invent numbers. Measured security figures live in `MODEL_CARD.md`.
 
-Current measured baseline (2026-10-21): 71 passed, 1 skipped, 81% total coverage (`models`/`health`/`history`/`config` 100%, `schemas` 95%, `session_store` 90%, `triage` 89%, `diagnosis`/`database` 88%, `chat` 83%, `booking` 84%, `vision_service` 80%, `upload` 79%, `calibration` 43%, `nlp_service` 33%, `media` 64%, `onnx_service` 24%, `preprocessing` 50%), ~13 s. The skip is the optional `backend/models/dashboard_lights.pt` integration test because no weights are present. A TestClient smoke returned health 200, chat `greet`, booking 201. The earlier ML-pinned Docker image built successfully with ultralytics 8.3.155 and runtime imports (`torch`, `torchvision`, `transformers`, `ultralytics`, `albumentations`, `cv2`, `onnxruntime`, `scipy`) passed; `requirements.txt` now pins ultralytics 8.4.183 for YOLO11/YOLO26 weights, but that image has not been rebuilt in this change. Actual model inference was not exercised because no weights are included. Local Python 3.14 vs CI 3.12 is expected.
+Current measured baseline (2026-11-28): 119 passed, 1 skipped, 85% total coverage, ~25 s. The skip is the optional `backend/models/dashboard_lights.pt` integration test because no weights are present. Bandit (`-ll`, tests excluded) reports 0 Medium / 0 High; `pip-audit` on pinned deps reports no known vulnerabilities (torch/torchvision CPU wheels are skipped). A TestClient smoke returned health 200, chat `greet`, booking 201. The earlier ML-pinned Docker image built successfully with ultralytics 8.3.155 and runtime imports (`torch`, `torchvision`, `transformers`, `ultralytics`, `albumentations`, `cv2`, `onnxruntime`, `scipy`) passed; `requirements.txt` pins ultralytics 8.4.183, torch 2.10.0+cpu, torchvision 0.25.0+cpu, Pillow 13.0.0 and transformers 5.14.1. Actual model inference was not exercised because no weights are included. Local Python 3.14 vs CI 3.12 is expected.
 
-CI runs the backend install → pytest → Docker build, and frontend install → lint → typecheck → build. A deployment counts only after the live host passes `/api/health/` and the full chat/diagnosis/booking/upload flow with CORS and HTTPS checked. Record the result; otherwise say "not deployed".
+CI runs the backend install → pytest → Docker build, a security job (Bandit `-ll`, pip-audit on pinned deps, Trivy CRITICAL/HIGH), and frontend install → lint → typecheck → build. A deployment counts only after the live host passes `/api/health/` and the full chat/diagnosis/booking/upload flow with CORS and HTTPS checked. Record the result; otherwise say "not deployed".
 
 ## Known gaps / do not overclaim
 
-- No authentication or accounts; anyone with a session ID can read its history. Booking lookup by raw ID without `session_id` is public.
+- No authentication or accounts; anyone with a session ID can read its history. Booking lookup by raw ID without `session_id` is public. Keep it that way unless the user explicitly asks for an account system.
 - Rate limiting is in-memory, per worker, and keyed on the client host; behind a proxy this depends on whether trusted proxy headers are configured. It resets on restart.
 - SQLite + local media: single instance only. Compose runs two Uvicorn workers; each has its own limiter, and SQLite serializes writes.
 - No Alembic/schema migrations; `create_all` only creates missing tables.
@@ -178,12 +185,12 @@ CI runs the backend install → pytest → Docker build, and frontend install �
 
 ## Change rules
 
-- Add or update a test with every behavior change; never weaken an existing assertion to make a change pass. Keep all 71 tests green (the optional weights integration test skips when weights are absent).
+- Add or update a test with every behavior change; never weaken an existing assertion to make a change pass. Keep all 119 tests green (the optional weights integration test skips when weights are absent).
 - Keep endpoints, trailing slashes, status codes, and JSON field names stable; update `docs/API.md` and `src/api.ts` together. `detections`, `reliable_labels`, `message`, and `vision` are additive upload keys, so the frontend may ignore them.
 - Keep AI behind `ai_service.py`, ML behind the optional services, deterministic fallbacks intact, and `ai_used` honest.
 - Keep `ENABLE_ML_INFERENCE=False` as the default; never make a model file, download, GPU, or ML library required for startup/tests.
 - Never log or return keys, raw provider errors, tracebacks, or filesystem paths; keep the secret-leak test green.
-- Do not add a framework, database, queue, or auth system without an explicit plan and user approval. The FastAPI migration is complete; do not restart it.
+- Do not add a framework, database, queue, or auth system without an explicit plan and user approval. The FastAPI migration is complete; do not restart it. In particular, do **not** reintroduce a user table, JWT layer or encryption-at-rest: the 2026-11-28 decision (`decision.md` §4) is stateless data minimization.
 - For model changes, add a real migration strategy first; do not assume `create_all` updates an existing database.
 - Keep the prototype honest: no fabricated image analysis, metrics, live URLs, prices, ETAs, or guaranteed outcomes. Business claims stay marked unverified.
 - Update README/docs/checklist when behavior, setup, or deployment changes, and keep this file current.

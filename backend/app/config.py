@@ -37,6 +37,17 @@ class Settings(BaseSettings):
     MAX_VIDEO_MB: float = 50.0
     CHAT_RATELIMIT_PER_MIN: int = 30
 
+    # Hardening controls (security layer, all deterministic and local).
+    API_RATE_LIMIT_PER_MIN: int = 10
+    MAX_VISION_IMAGE_MB: float = 5.0
+    MAX_GUARD_HISTORY_MESSAGES: int = 6
+    MAX_GUARD_CONTEXT_CHARS: int = 1200
+    MAX_GUARD_CONTEXT_TOKENS: int = 600
+    MAX_LLM_TOKENS: int = 400
+
+    # Optional JSON-lines sink for structured security events (empty = stdout).
+    SECURITY_AUDIT_LOG: str = ""
+
     # ML model paths (empty = unavailable, deterministic fallback)
     VISION_MODEL_PATH: str = ""
     VISION_CONF: float = 0.25

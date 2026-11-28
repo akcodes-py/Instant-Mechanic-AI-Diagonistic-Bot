@@ -26,6 +26,9 @@ __pycache__/
 .coverage
 coverage.xml
 htmlcov/
+reports/
+# Generated locally for the oversized-upload VAPT probe; never commit it.
+docs/security_evidence/oversized.png
 
 # ML model / generated training artifacts (never commit weights)
 backend/models/

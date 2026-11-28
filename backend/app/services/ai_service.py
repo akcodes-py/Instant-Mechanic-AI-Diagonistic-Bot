@@ -12,6 +12,7 @@ import json
 import logging
 import re
 from app.config import settings
+from app.security.pii_masker import mask_messages, mask_pii, sanitize_llm_output
 
 logger = logging.getLogger(__name__)
 
@@ -49,19 +50,24 @@ def _client():
 
 
 def groq_chat(messages: list, max_tokens: int = 400) -> str:
-    """Free-form assistant reply for nuanced cases. Caller must validate input first."""
+    """Free-form assistant reply for nuanced cases. Caller must validate input first.
+
+    User/assistant turns are PII-masked before they leave the process, and the
+    reply is stripped of HTML/script content before it is returned.
+    """
     client = _client()
     try:
         resp = client.chat.completions.create(
             model=settings.GROQ_MODEL,
-            messages=[{"role": "system", "content": SYSTEM_MECHANIC}] + messages,
+            messages=[{"role": "system", "content": SYSTEM_MECHANIC}]
+            + mask_messages(messages),
             max_tokens=max_tokens,
             temperature=0.4,
         )
         text = (resp.choices[0].message.content or "").strip()
         if not text:
             raise AIServiceError("Empty response from AI provider.", kind="invalid_response")
-        return text
+        return sanitize_llm_output(text)
     except AIServiceError:
         raise
     except Exception as e:
@@ -83,8 +89,11 @@ DIAGNOSIS_SCHEMA_HINT = """Return ONLY valid JSON with keys:
 
 def groq_structured_diagnosis(symptom_text: str, vehicle: str = "") -> dict:
     client = _client()
+    # Mask PII in the symptom narrative and the vehicle string before the call.
+    safe_symptoms = mask_pii(symptom_text)[:4000]
+    safe_vehicle = mask_pii(vehicle)
     prompt = (
-        f"Vehicle: {vehicle or 'unknown'}\nSymptoms & history:\n{symptom_text[:4000]}\n\n"
+        f"Vehicle: {safe_vehicle or 'unknown'}\nSymptoms & history:\n{safe_symptoms}\n\n"
         + DIAGNOSIS_SCHEMA_HINT
     )
     try:
@@ -139,4 +148,14 @@ def parse_diagnosis_json(raw: str) -> dict:
             data[k] = []
         data[k] = [str(x)[:300] for x in data[k][:8]]
     data["summary"] = data["summary"][:1000]
+    # Improper-output-handling guard: strip script blocks / HTML from every
+    # model-authored string before it can be persisted or returned.
+    for key in ("summary", "drive_guidance", "safety_warning"):
+        data[key] = sanitize_llm_output(str(data.get(key) or ""))
+    for key in ("possible_causes", "supporting_symptoms", "next_steps"):
+        data[key] = [
+            cleaned
+            for cleaned in (sanitize_llm_output(item) for item in data[key])
+            if cleaned
+        ]
     return data

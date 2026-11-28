@@ -7,6 +7,20 @@ from pydantic import BaseModel, ValidationError, field_validator
 
 from app.constants import SERVICE_TYPES
 
+# Narrow, deterministic payload signatures. The API rejects these at Pydantic
+# validation time so hostile strings never reach routes, logs or storage.
+_PAYLOAD_RE = re.compile(
+    r"<\s*script|javascript:|onerror\s*=|onload\s*=|"
+    r"'\s*or\s+1\s*=\s*1|\bunion\s+select\b|;\s*drop\s+table|\.\./",
+    re.IGNORECASE,
+)
+
+
+def _reject_payload(value: str | None) -> str | None:
+    if value and len(value) <= 20000 and _PAYLOAD_RE.search(value):
+        raise ValueError("Input contains an unsupported payload.")
+    return value
+
 
 class ChatRequest(BaseModel):
     message: str | None = ""
@@ -16,6 +30,11 @@ class ChatRequest(BaseModel):
     vehicle_year: str | None = None
     vehicle_fuel: str | None = None
     website: str | None = None
+
+    @field_validator("message")
+    @classmethod
+    def validate_message(cls, value: str | None) -> str | None:
+        return _reject_payload(value)
 
 
 class DiagnosisRequest(BaseModel):
@@ -68,6 +87,11 @@ class BookingRequest(BaseModel):
         if value not in SERVICE_TYPES:
             raise ValueError("Unknown service type.")
         return value
+
+    @field_validator("vehicle_details", "location", "notes")
+    @classmethod
+    def validate_free_text(cls, value: str | None) -> str | None:
+        return _reject_payload(value)
 
 
 def validation_errors(exc: ValidationError) -> dict[str, list[str]]:
