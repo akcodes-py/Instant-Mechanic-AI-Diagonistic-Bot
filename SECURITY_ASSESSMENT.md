@@ -177,7 +177,8 @@ Measured on this machine (Windows, Python 3.14.4) on 2026-11-28.
 | SAST (CI gate) | `bandit -r backend/app -ll -x backend/app/tests` | **No issues identified** — 0 Medium, 0 High, exit 0 |
 | SAST (all) | `bandit -r backend/app -ll` | 0 Medium, 0 High, exit 0 |
 | Dependency audit | `pip-audit -r backend/requirements.txt --no-deps --disable-pip` | **No known vulnerabilities**, exit 0; `torch`/`torchvision` CPU wheels skipped (not on PyPI) |
-| Container scan | Trivy in `.github/workflows/ci.yml` | Runs in CI only; **not run locally** in this change |
+| CI security job | `.github/workflows/ci.yml` (`security`) | **Green** on `security/ci-fix`, run `46143181571` — Bandit 0 Medium/0 High, pip-audit no known vulnerabilities, Trivy 0 CRITICAL/HIGH. Raw log: `docs/security_evidence/ci_security_job.log` |
+| Container scan | Trivy in `.github/workflows/ci.yml` | **Passed in CI** after bumping Pillow 13.0.0, transformers 5.14.1, torch 2.10.0+cpu and upgrading Debian `libzstd1` in the non-root image |
 | Postman / Newman | `npx newman run docs/instant_mechanic.postman_collection.json` against local Uvicorn | **Executed**: 29 requests, 14 test scripts, 32 assertions, 0 failures. Raw report: `docs/security_evidence/postman_run_report.json` |
 | Burp Suite | `docs/BURP_SUITE_CHECKLIST.md` | Runbook prepared; **0 of 4 screenshots captured** — Burp Suite is not installed in this environment. No screenshots were fabricated |
 | Deployment | — | **Not deployed.** No URL, uptime or live smoke result is claimed |
@@ -192,6 +193,6 @@ training script, inference path or Docker hardening was modified.
 1. Run the Postman collection against a local server and attach the run report.
 2. Execute the four Burp Repeater checks and save the screenshots named in
    `docs/security_evidence/README.md`.
-3. Capture the CI security job log (Bandit + pip-audit + Trivy).
+3. ~~Capture the CI security job log (Bandit + pip-audit + Trivy).~~ Done — `docs/security_evidence/ci_security_job.log`.
 4. Re-run this assessment after any change to the upload, masking, prompt or
    header paths.
