@@ -55,6 +55,22 @@ async def history_text(db: AsyncSession, session: ChatSession, limit: int = 12) 
     )
 
 
+async def history_messages(db: AsyncSession, session: ChatSession, limit: int = 12) -> list[dict]:
+    """Structured history for the security layer's multi-turn sanitizer."""
+    rows = (
+        await db.scalars(
+            select(ChatMessage)
+            .where(ChatMessage.session_id == session.id)
+            .order_by(ChatMessage.created_at.desc())
+            .limit(limit)
+        )
+    ).all()
+    return [
+        {"role": message.role, "content": message.content[:600]}
+        for message in reversed(rows)
+    ]
+
+
 async def message_count(db: AsyncSession, session: ChatSession) -> int:
     count = await db.scalar(
         select(func.count(ChatMessage.id)).where(ChatMessage.session_id == session.id)

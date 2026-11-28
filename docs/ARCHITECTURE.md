@@ -20,6 +20,12 @@ FastAPI + Uvicorn (AWS EC2, async SQLAlchemy + aiosqlite, media at MEDIA_ROOT)
   │   ├─ preprocessing.py  — optional CLAHE/sharpen/contrast + blur/darkness checks
   │   ├─ calibration.py    — temperature scaling, split conformal prediction, routing
   │   └─ onnx_service.py   — optional ONNX Runtime INT8 inference + timing helper
+   ├─ app/security/
+   │   ├─ injection_guard.py   — ShopAssist two-layer filter + multi-turn thread sanitizer
+   │   ├─ policy_router.py     — template / HITL / bounded-LLM routing + MAPIE sufficiency gate
+   │   ├─ image_sanitizer.py   — magic bytes, 5 MB cap, in-memory EXIF/GPS strip, enum-only vision handoff
+   │   ├─ output_safety.py     — critical hazard override, unsafe-advice and hidden-context scrub
+   │   └─ middleware.py        — slowapi 429 + Retry-After, security headers, log PII scrub
   └─ app/config.py         — pydantic-settings, env-driven, CORS allowlist, ML paths/flags
 ```
 

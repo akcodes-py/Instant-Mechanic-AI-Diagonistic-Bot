@@ -42,6 +42,34 @@ def preprocess_for_inference(image_path: str | Path) -> str:
         return original
 
 
+def preprocess_image_in_memory(image):
+    """Apply the same CLAHE/sharpen pipeline to an in-memory Pillow image.
+
+    Returns a PIL image (or the unchanged input on failure). No upload bytes
+    are written to disk by this path.
+    """
+    try:
+        import albumentations as A
+        import cv2
+        import numpy as np
+
+        rgb = np.array(image.convert("RGB"))
+        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+        transform = A.Compose(
+            [
+                A.CLAHE(clip_limit=2.0, tile_grid_size=(8, 8), p=1.0),
+                A.Sharpen(alpha=(0.2, 0.5), lightness=(0.5, 1.0), p=0.5),
+            ]
+        )
+        processed = cv2.cvtColor(transform(image=bgr)["image"], cv2.COLOR_BGR2RGB)
+        from PIL import Image
+
+        return Image.fromarray(processed)
+    except Exception as exc:  # pragma: no cover - depends on optional libs
+        logger.warning("In-memory preprocessing failed: %s", type(exc).__name__)
+        return image
+
+
 def is_low_quality(image_path: str | Path) -> bool:
     """Return True for a blurry or too-dark image; False on any error."""
     try:

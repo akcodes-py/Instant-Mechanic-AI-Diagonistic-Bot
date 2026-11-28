@@ -154,19 +154,21 @@ def detect_warning_lights(image_path: str | Path) -> list[dict]:
     if model is None:
         return []
 
-    try:
-        path = Path(image_path)
-        exists = path.is_file()
-    except (TypeError, ValueError, OSError):
-        logger.error("Vision inference skipped: invalid input path")
-        return []
-    if not exists:
-        logger.error("Vision inference skipped: input file not found")
-        return []
+    in_memory = not isinstance(image_path, (str, Path))
+    if not in_memory:
+        try:
+            path = Path(image_path)
+            exists = path.is_file()
+        except (TypeError, ValueError, OSError):
+            logger.error("Vision inference skipped: invalid input path")
+            return []
+        if not exists:
+            logger.error("Vision inference skipped: input file not found")
+            return []
 
     try:
         results = model.predict(
-            source=str(path),
+            source=image_path if in_memory else str(path),
             conf=settings.VISION_CONF,
             imgsz=settings.VISION_IMGSZ,
             iou=0.5,

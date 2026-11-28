@@ -5,8 +5,10 @@ aiosqlite==0.22.1
 pydantic==2.13.4
 pydantic-settings==2.14.2
 python-multipart==0.0.32
+slowapi==0.1.9
+limits==5.8.0
 groq==1.7.0
-Pillow==12.3.0
+Pillow==13.0.0
 httpx==0.28.1
 pytest==9.1.1
 pytest-asyncio==1.4.0
@@ -15,10 +17,10 @@ pytest-cov==7.1.0
 # Optional ML inference (CPU-only). Model files are mounted, not committed.
 # Install with: pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 # Ultralytics 8.4.x is required to load YOLO11/YOLO26-family weights.
-torch==2.7.1+cpu
-torchvision==0.22.1+cpu
+torch==2.10.0+cpu
+torchvision==0.25.0+cpu
 ultralytics==8.4.183
-transformers==4.53.0
+transformers==5.14.1
 albumentations==2.0.8
 opencv-python-headless==4.12.0.88
 # Ultralytics declares opencv-python (not the headless package); pin the same
