@@ -18,8 +18,8 @@ pytest-cov==7.1.0
 # Optional ML inference (CPU-only). Model files are mounted, not committed.
 # Install with: pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 # Ultralytics 8.4.x is required to load YOLO11/YOLO26-family weights.
-torch==2.7.1+cpu
-torchvision==0.22.1+cpu
+torch==2.10.0+cpu
+torchvision==0.25.0+cpu
 ultralytics==8.4.183
 transformers==5.14.1
 albumentations==2.0.8
