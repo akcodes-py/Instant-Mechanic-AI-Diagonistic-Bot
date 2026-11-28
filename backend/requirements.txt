@@ -5,6 +5,9 @@ aiosqlite==0.22.1
 pydantic==2.13.4
 pydantic-settings==2.14.2
 python-multipart==0.0.32
+# Security: slowapi throttling and its limits backend.
+slowapi==0.1.9
+limits==5.8.0
 groq==1.7.0
 Pillow==12.3.0
 httpx==0.28.1
